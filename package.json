@@ -1,12 +1,23 @@
 {
-    "engines": {
-        "node": ">=18",
-        "pnpm": ">=3"
-    },
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "fsevents",
-            "next"
-        ]
-    }
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "fsevents",
+      "next"
+    ]
+  },
+  "devDependencies": {
+    "@nx/jest": "20.6.0",
+    "@nx/next": "20.6.0",
+    "jest": "^29.7.0",
+    "nx": "20.6.0"
+  },
+  "dependencies": {
+    "next": "~15.1.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  }
 }
