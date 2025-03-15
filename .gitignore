@@ -36,3 +36,12 @@ eclipse-*bin/
 # User-specific .bazelrc
 user.bazelrc
 node_modules/
+
+
+
+.nx/cache
+.nx/workspace-data
+
+# Next.js
+.next
+out
