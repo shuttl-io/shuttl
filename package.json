@@ -7,7 +7,22 @@
     "onlyBuiltDependencies": [
       "fsevents",
       "next"
-    ]
+    ],
+    "supportedArchitectures": {
+      "os": [
+        "current",
+        "win32",
+        "darwin",
+        "linux"
+      ],
+      "cpu": [
+        "arm64",
+        "x64"
+      ],
+      "libc": [
+        "glibc"
+      ]
+    }
   },
   "devDependencies": {
     "@nx/jest": "20.6.0",
@@ -19,5 +34,8 @@
     "next": "~15.1.4",
     "react": "19.0.0",
     "react-dom": "19.0.0"
+  },
+  "scripts": {
+    "reset-nx": "nx reset"
   }
 }
