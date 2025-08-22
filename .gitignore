@@ -47,3 +47,5 @@ node_modules/
 out
 coverage/
 reports/
+
+.venv/
