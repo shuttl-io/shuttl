@@ -49,3 +49,7 @@ coverage/
 reports/
 
 .venv/
+.env
+.env.local
+.env.development
+.config.local.toml
