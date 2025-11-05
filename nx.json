@@ -1,18 +1,8 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "plugins": [
-    {
-      "plugin": "@nx/jest/plugin",
-      "options": {
-        "targetName": "jest:test"
-      }
-    },
-    {
-      "plugin": "@nxlv/python",
-      "options": {
-        "packageManager": "uv"
-      }
-    },
+    { "plugin": "@nx/jest/plugin", "options": { "targetName": "jest:test" } },
+    { "plugin": "@nxlv/python", "options": { "packageManager": "uv" } },
     {
       "plugin": "@nx/next/plugin",
       "options": {
@@ -35,22 +25,12 @@
     },
     {
       "plugin": "@nx/eslint/plugin",
-      "options": {
-        "targetName": "eslint:lint"
-      }
+      "options": { "targetName": "eslint:lint" }
     }
   ],
-  "targetDefaults": {
-    "e2e-ci--**/*": {
-      "dependsOn": ["^next:build"]
-    }
-  },
+  "targetDefaults": { "e2e-ci--**/*": { "dependsOn": ["^next:build"] } },
   "generators": {
-    "@nx/next": {
-      "application": {
-        "style": "css",
-        "linter": "eslint"
-      }
-    }
-  }
+    "@nx/next": { "application": { "style": "css", "linter": "eslint" } }
+  },
+  "nxCloudId": "690ac550e44086a7e8914eae"
 }
