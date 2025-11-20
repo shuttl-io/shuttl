@@ -29,6 +29,7 @@
     "@eslint/compat": "^1.1.1",
     "@eslint/eslintrc": "^2.1.1",
     "@eslint/js": "^9.8.0",
+    "@nx-go/nx-go": "^3.3.1",
     "@nx/cypress": "22.0.2",
     "@nx/eslint": "22.0.2",
     "@nx/eslint-plugin": "22.0.2",
@@ -63,6 +64,7 @@
     "eslint-plugin-react-hooks": "5.0.0",
     "jest": "30.0.5",
     "jest-environment-jsdom": "30.0.5",
+    "jest-util": "30.0.5",
     "jiti": "2.4.2",
     "jsdom": "~22.1.0",
     "jsonc-eslint-parser": "^2.1.0",
@@ -74,8 +76,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.3",
     "vite": "7.2.2",
-    "vitest": "^3.0.0",
-    "jest-util": "30.0.5"
+    "vitest": "^3.0.0"
   },
   "dependencies": {
     "@nx/devkit": "22.0.2",
