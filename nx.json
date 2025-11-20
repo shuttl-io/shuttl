@@ -66,5 +66,10 @@
       }
     }
   },
-  "nxCloudId": "690ac550e44086a7e8914eae"
+  "nxCloudId": "690ac550e44086a7e8914eae",
+  "namedInputs": {
+    "sharedGlobals": [
+      "{workspaceRoot}/go.work"
+    ]
+  }
 }
