@@ -56,3 +56,5 @@ reports/
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
 __pycache__/
+.env
+.env.local
