@@ -1,0 +1,62 @@
+{
+  "name": "shuttl-lib",
+  "version": "1.0.0",
+  "description": "The JSII library for Shuttl AI models",
+  "main": "{projectRoot}/dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "jsii",
+    "build:watch": "jsii --watch",
+    "package": "jsii-pacmak"
+  },
+  "keywords": [],
+  "author": {
+    "name": "Shuttl AI",
+    "email": "developers@shuttl.io",
+    "url": "https://www.shuttl.io"
+  },
+  "repository": {
+    "url": "https://github.com/shuttl-io/shuttl_ai.git"
+  },
+  "license": "ISC",
+  "stability": "stable",
+  "types": "dist/index.d.ts",
+  "nx": {
+    "targets": {
+      "package": {
+        "dependsOn": [
+          "build"
+        ]
+      }
+    }
+  },
+  "jsii": {
+    "versionFormat": "full",
+    "outdir": "dist",
+    "targets": {
+      "java": {
+        "package": "io.shuttl.module.shuttl",
+        "maven": {
+          "groupId": "io.shuttl.module",
+          "artifactId": "shuttl"
+        }
+      },
+      "python": {
+        "distName": "shuttl.models",
+        "module": "shuttl.model"
+      },
+      "dotnet": {
+        "namespace": "shuttl.models",
+        "packageId": "shuttl.models"
+      }
+    },
+    "tsc": {
+      "outDir": "dist",
+      "root": "src"
+    }
+  },
+  "devDependencies": {
+    "jsii": "^5.9.14",
+    "jsii-pacmak": "^1.120.0"
+  }
+}
