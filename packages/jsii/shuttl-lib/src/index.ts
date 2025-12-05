@@ -1,12 +1,15 @@
-export * from "./agent";
-export * from "./model";
-export * from "./secrets";
-export * from "./models/types";
-export * from "./tools/toolkit";
-export * from "./tools/tool";
-export * from "./Server";
-export * from "./app";
-export * from "./server";
-export * from "./trigger";
-export * from "./outcomes";
-export * from "./models/types";
+export interface GreeterProps {
+  readonly greetee: string;
+}
+
+export class Greeter {
+  private readonly greetee: string;
+
+  public constructor(props: GreeterProps) {
+    this.greetee = props.greetee;
+  }
+
+  public greet(): string {
+    return `Hello, ${this.greetee}!`
+  }
+}
