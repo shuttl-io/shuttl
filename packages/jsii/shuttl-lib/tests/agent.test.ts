@@ -1,69 +1,33 @@
 import { Agent, AgentProps } from "../src/agent";
 import { Model } from "../src/model";
-import { Secret } from "../src/secrets";
-import { IModelFactory, IModelStreamer, ModelContent, IModel, ModelResponse, ModelResponseData } from "../src/models/types";
 import { Toolkit } from "../src/tools/toolkit";
-import { ITool, Schema, ToolArgBuilder } from "../src/tools/tool";
+import { ITool, ToolArg } from "../src/tools/tool";
 
 // Mock tool implementation for testing
 class MockTool implements ITool {
     public name: string;
     public description: string;
-    public schema: Schema;
 
-    constructor(name: string, description: string, args: Record<string, ToolArgBuilder> = {}) {
+    constructor(name: string, description: string) {
         this.name = name;
         this.description = description;
-        this.schema = Schema.objectValue(args);
     }
 
     execute(_args: Record<string, unknown>): unknown {
         return { executed: true };
     }
-}
 
-// Mock streamer for testing
-class MockStreamer implements IModelStreamer {
-    public receivedResponses: ModelResponse[] = [];
-    public receivedModels: IModel[] = [];
-
-    async recieve(model: IModel, content: ModelResponse): Promise<void> {
-        this.receivedModels.push(model);
-        this.receivedResponses.push(content);
-    }
-}
-
-// Mock model for testing without real API calls
-class MockModel implements IModel {
-    public readonly threadId?: string = "mock-thread-id";
-
-    async invoke(prompt: ModelContent[], streamer: IModelStreamer): Promise<void> {
-        await streamer.recieve(this, {
-            eventName: "response.output_text.done",
-            data: {
-                typeName: "output_text",
-                outputText: {
-                    outputType: "output_text",
-                    text: `Mock response to: ${prompt[0]?.content || "empty"}`,
-                },
-            },
-        });
-    }
-}
-
-// Mock factory for testing
-class MockModelFactory implements IModelFactory {
-    async create(_props: { systemPrompt: string }): Promise<IModel> {
-        return new MockModel();
+    produceArgs(): Record<string, ToolArg> {
+        return {};
     }
 }
 
 describe("Agent", () => {
-    let defaultModelFactory: IModelFactory;
+    let defaultModel: Model;
     let defaultToolkit: Toolkit;
 
     beforeEach(() => {
-        defaultModelFactory = Model.openAI("gpt-4", Secret.fromEnv("OPENAI_API_KEY"));
+        defaultModel = new Model({ identifier: "gpt-4", key: "test-key" });
         defaultToolkit = new Toolkit({ name: "TestToolkit", description: "A test toolkit" });
     });
 
@@ -73,7 +37,7 @@ describe("Agent", () => {
                 name: "TestAgent",
                 toolkits: [defaultToolkit],
                 systemPrompt: "You are a helpful assistant.",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -81,7 +45,7 @@ describe("Agent", () => {
             expect(agent.name).toBe("TestAgent");
             expect(agent.toolkits).toEqual([defaultToolkit]);
             expect(agent.systemPrompt).toBe("You are a helpful assistant.");
-            expect(agent.model).toBe(defaultModelFactory);
+            expect(agent.model).toBe(defaultModel);
         });
 
         it("should create an Agent with empty toolkits array", () => {
@@ -89,7 +53,7 @@ describe("Agent", () => {
                 name: "EmptyToolkitsAgent",
                 toolkits: [],
                 systemPrompt: "No tools available.",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -108,7 +72,7 @@ describe("Agent", () => {
                 name: "MultiToolkitAgent",
                 toolkits: [toolkit1, toolkit2, toolkit3],
                 systemPrompt: "You have many tools.",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -124,7 +88,7 @@ describe("Agent", () => {
                 name: "",
                 toolkits: [],
                 systemPrompt: "Empty name agent",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -137,7 +101,7 @@ describe("Agent", () => {
                 name: "NoPromptAgent",
                 toolkits: [],
                 systemPrompt: "",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -154,7 +118,7 @@ Never reveal sensitive information.`;
                 name: "MultilinePromptAgent",
                 toolkits: [],
                 systemPrompt: multilinePrompt,
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             const agent = new Agent(props);
@@ -177,7 +141,7 @@ Never reveal sensitive information.`;
                 name: "ToolsAgent",
                 toolkits: [toolkit],
                 systemPrompt: "Agent with tools",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             expect(agent.toolkits).toHaveLength(1);
@@ -197,7 +161,7 @@ Never reveal sensitive information.`;
                 name: "SearchAgent",
                 toolkits: [toolkit],
                 systemPrompt: "Agent for searching",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             const result = agent.toolkits[0].tools[0].execute({});
@@ -207,94 +171,62 @@ Never reveal sensitive information.`;
     });
 
     describe("model property", () => {
-        it("should store the model factory reference correctly", () => {
-            const secret = Secret.fromEnv("ANTHROPIC_API_KEY");
-            const modelFactory = Model.openAI("claude-3-opus", secret);
+        it("should store the model reference correctly", () => {
+            const model = new Model({ identifier: "claude-3-opus", key: "anthropic-key" });
 
             const agent = new Agent({
                 name: "ClaudeAgent",
                 toolkits: [],
                 systemPrompt: "Using Claude",
-                model: modelFactory,
+                model,
             });
 
-            expect(agent.model).toBe(modelFactory);
-            expect(typeof agent.model.create).toBe("function");
+            expect(agent.model).toBe(model);
+            expect(agent.model.identifier).toBe("claude-3-opus");
+            expect(agent.model.key).toBe("anthropic-key");
         });
 
-        it("should allow different agents to use different model factories", () => {
-            const gptFactory = Model.openAI("gpt-4", Secret.fromEnv("OPENAI_KEY"));
-            const claudeFactory = Model.openAI("claude-3", Secret.fromEnv("ANTHROPIC_KEY"));
+        it("should allow different agents to use different models", () => {
+            const gptModel = new Model({ identifier: "gpt-4", key: "openai-key" });
+            const claudeModel = new Model({ identifier: "claude-3", key: "anthropic-key" });
 
             const gptAgent = new Agent({
                 name: "GPTAgent",
                 toolkits: [],
                 systemPrompt: "GPT based",
-                model: gptFactory,
+                model: gptModel,
             });
 
             const claudeAgent = new Agent({
                 name: "ClaudeAgent",
                 toolkits: [],
                 systemPrompt: "Claude based",
-                model: claudeFactory,
+                model: claudeModel,
             });
 
-            expect(gptAgent.model).toBe(gptFactory);
-            expect(claudeAgent.model).toBe(claudeFactory);
-            expect(gptAgent.model).not.toBe(claudeAgent.model);
+            expect(gptAgent.model.identifier).toBe("gpt-4");
+            expect(claudeAgent.model.identifier).toBe("claude-3");
         });
 
-        it("should allow multiple agents to share the same model factory", () => {
-            const sharedFactory = Model.openAI("shared-model", Secret.fromEnv("SHARED_KEY"));
+        it("should allow multiple agents to share the same model", () => {
+            const sharedModel = new Model({ identifier: "shared-model", key: "shared-key" });
 
             const agent1 = new Agent({
                 name: "Agent1",
                 toolkits: [],
                 systemPrompt: "First agent",
-                model: sharedFactory,
+                model: sharedModel,
             });
 
             const agent2 = new Agent({
                 name: "Agent2",
                 toolkits: [],
                 systemPrompt: "Second agent",
-                model: sharedFactory,
+                model: sharedModel,
             });
 
             expect(agent1.model).toBe(agent2.model);
-            expect(agent1.model).toBe(sharedFactory);
-        });
-    });
-
-    describe("invoke method", () => {
-        it("should have an invoke method", () => {
-            const agent = new Agent({
-                name: "TestAgent",
-                toolkits: [],
-                systemPrompt: "Test",
-                model: new MockModelFactory(),
-            });
-
-            expect(typeof agent.invoke).toBe("function");
-        });
-
-        it("should invoke with a prompt string", async () => {
-            const model = new MockModel();
-            class MockModelFactory2 implements IModelFactory {
-                async create(_props: { systemPrompt: string }): Promise<IModel> {
-                    return model;
-                }
-            }
-            const agent = new Agent({
-                name: "TestAgent",
-                toolkits: [],
-                systemPrompt: "You are helpful.",
-                model: new MockModelFactory2(),
-            });
-
-            // Should not throw
-            await expect(agent.invoke("Hello")).resolves.toEqual(model);
+            expect(agent1.model).toBe(sharedModel);
         });
     });
 
@@ -304,7 +236,7 @@ Never reveal sensitive information.`;
                 name: "ReadonlyAgent",
                 toolkits: [],
                 systemPrompt: "Test",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             expect(agent.name).toBeDefined();
@@ -316,7 +248,7 @@ Never reveal sensitive information.`;
                 name: "ReadonlyAgent",
                 toolkits: [defaultToolkit],
                 systemPrompt: "Test",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             expect(agent.toolkits).toBeDefined();
@@ -328,7 +260,7 @@ Never reveal sensitive information.`;
                 name: "ReadonlyAgent",
                 toolkits: [],
                 systemPrompt: "Readonly prompt",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             expect(agent.systemPrompt).toBeDefined();
@@ -340,11 +272,11 @@ Never reveal sensitive information.`;
                 name: "ReadonlyAgent",
                 toolkits: [],
                 systemPrompt: "Test",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             expect(agent.model).toBeDefined();
-            expect(typeof agent.model.create).toBe("function");
+            expect(agent.model).toBeInstanceOf(Model);
         });
     });
 
@@ -354,13 +286,13 @@ Never reveal sensitive information.`;
                 name: "ValidAgent",
                 toolkits: [],
                 systemPrompt: "Valid prompt",
-                model: defaultModelFactory,
+                model: defaultModel,
             };
 
             expect(props.name).toBe("ValidAgent");
             expect(props.toolkits).toEqual([]);
             expect(props.systemPrompt).toBe("Valid prompt");
-            expect(props.model).toBe(defaultModelFactory);
+            expect(props.model).toBe(defaultModel);
         });
     });
 
@@ -370,14 +302,14 @@ Never reveal sensitive information.`;
                 name: "Agent1",
                 toolkits: [defaultToolkit],
                 systemPrompt: "Prompt 1",
-                model: defaultModelFactory,
+                model: defaultModel,
             });
 
             const agent2 = new Agent({
                 name: "Agent2",
                 toolkits: [],
                 systemPrompt: "Prompt 2",
-                model: Model.openAI("other-model", Secret.fromEnv("OTHER_KEY")),
+                model: new Model({ identifier: "other-model", key: "other-key" }),
             });
 
             expect(agent1.name).not.toBe(agent2.name);
@@ -386,75 +318,5 @@ Never reveal sensitive information.`;
             expect(agent1.model).not.toBe(agent2.model);
         });
     });
-
-    describe("model factory with IModelFactory interface", () => {
-        it("should work with model factory created from Model.openAI", () => {
-            const factory = Model.openAI("gpt-4", Secret.fromEnv("OPENAI_KEY"));
-            const agent = new Agent({
-                name: "FactoryModelAgent",
-                toolkits: [],
-                systemPrompt: "Uses factory model",
-                model: factory,
-            });
-
-            expect(agent.model).toBe(factory);
-            expect(typeof agent.model.create).toBe("function");
-        });
-
-        it("should work with any IModelFactory implementation", async () => {
-            // Create a custom IModelFactory implementation for testing
-            const customFactory: IModelFactory = {
-                create: async (_props) => {
-                    return {
-                        threadId: "custom-thread-id",
-                        invoke: async (_prompt, streamer) => {
-                            const model: IModel = { threadId: "custom", invoke: async () => {} } as IModel;
-                            await streamer.recieve(model, {
-                                eventName: "response.output_text.done",
-                                data: { typeName: "output_text", outputText: { outputType: "output_text", text: "Custom response" } },
-                            });
-                        },
-                    };
-                },
-            };
-
-            const agent = new Agent({
-                name: "CustomModelAgent",
-                toolkits: [],
-                systemPrompt: "Uses custom model",
-                model: customFactory,
-            });
-
-            const model = await agent.model.create({ systemPrompt: agent.systemPrompt });
-            const streamer = new MockStreamer();
-            await model.invoke([{ content: "Hello", role: "user" }], streamer);
-
-            const response = streamer.receivedResponses[0];
-            expect(Array.isArray(response.data)).toBe(false);
-            const data = response.data as ModelResponseData;
-            expect(data.typeName).toBe("output_text");
-            if (data.typeName === "output_text") {
-                expect(data.outputText?.text).toBe("Custom response");
-            }
-        });
-
-        it("should be able to create model instances and invoke with streamer using mock factory", async () => {
-            const mockFactory = new MockModelFactory();
-            const agent = new Agent({
-                name: "TestAgent",
-                toolkits: [],
-                systemPrompt: "You are a helpful assistant.",
-                model: mockFactory,
-            });
-
-            const model = await agent.model.create({ systemPrompt: agent.systemPrompt });
-            const streamer = new MockStreamer();
-
-            await model.invoke([{ content: "Hello", role: "user" }], streamer);
-
-            expect(streamer.receivedResponses.length).toBeGreaterThan(0);
-            expect(streamer.receivedModels[0]).toBe(model);
-            expect(model.threadId).toBe("mock-thread-id");
-        });
-    });
 });
+

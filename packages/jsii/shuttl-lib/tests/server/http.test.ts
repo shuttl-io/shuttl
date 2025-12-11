@@ -23,7 +23,6 @@ jest.mock("readline", () => ({
 }));
 
 import { StdInServer, IPCRequest, IPCResponse } from "../../src/server/http";
-import { Schema } from "../../src/tools/tool";
 
 describe("StdInServer", () => {
     let server: StdInServer;
@@ -250,9 +249,8 @@ describe("StdInServer", () => {
                 sendRequest({ id: "5", method: "listToolkits" });
 
                 const response = getLastResponse();
-                
                 expect(response.id).toBe("5");
-                expect(response.success).toEqual(true);
+                expect(response.success).toBe(true);
                 expect(response.result).toEqual([]);
             });
 
@@ -260,10 +258,10 @@ describe("StdInServer", () => {
                 const mockTool = {
                     name: "testTool",
                     description: "A test tool",
-                    schema: Schema.objectValue({
-                        arg1: Schema.stringValue("A test argument").isRequired(),
-                    }),
                     execute: jest.fn(),
+                    produceArgs: jest.fn().mockReturnValue({
+                        arg1: { name: "arg1", argType: "string", required: true },
+                    }),
                 };
                 const mockToolkit = {
                     name: "TestToolkit",
@@ -286,7 +284,6 @@ describe("StdInServer", () => {
                 sendRequest({ id: "6", method: "listToolkits" });
 
                 const response = getLastResponse();
-                console.log(response);
                 expect(response.success).toBe(true);
                 expect(response.result).toEqual([
                     {
@@ -296,8 +293,7 @@ describe("StdInServer", () => {
                             {
                                 name: "testTool",
                                 description: "A test tool",
-                                args: { 
-                                    arg1: { argType: "string", required: true, description: "A test argument" } },
+                                args: { arg1: { name: "arg1", argType: "string", required: true } },
                             },
                         ],
                     },
@@ -491,166 +487,6 @@ describe("StdInServer", () => {
             });
 
             expect(mockTool.execute).toHaveBeenCalledWith({});
-        });
-    });
-
-    describe("handleInvokeAgent()", () => {
-        let mockAgent: {
-            name: string;
-            systemPrompt: string;
-            model: { provider: string; name: string };
-            toolkits: { name: string }[];
-            invoke: jest.Mock;
-        };
-
-        beforeEach(async () => {
-            mockAgent = {
-                name: "TestAgent",
-                systemPrompt: "You are a test agent",
-                model: { provider: "openai", name: "gpt-4" },
-                toolkits: [{ name: "toolkit1" }],
-                invoke: jest.fn().mockResolvedValue({ threadId: "thread-123" }),
-            };
-            const mockApp = {
-                name: "TestApp",
-                agents: [mockAgent],
-                toolkits: new Set(),
-            };
-
-            server.accept(mockApp);
-            void server.start();
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            jest.clearAllMocks();
-        });
-
-        it("should return error if agent param is missing", () => {
-            sendRequest({
-                id: "20",
-                method: "invokeAgent",
-                body: { prompt: "Hello" },
-            });
-
-            const response = getLastResponse();
-            expect(response.success).toBe(false);
-            expect(response.errorObj?.code).toBe("INVALID_PARAMS");
-            expect(response.errorObj?.message).toContain("'agent'");
-        });
-
-        it("should return error if agent not found", () => {
-            sendRequest({
-                id: "21",
-                method: "invokeAgent",
-                body: { agent: "NonExistentAgent", prompt: "Hello" },
-            });
-
-            const response = getLastResponse();
-            expect(response.success).toBe(false);
-            expect(response.errorObj?.code).toBe("NOT_FOUND");
-            expect(response.errorObj?.message).toContain("Agent not found");
-        });
-
-        it("should invoke agent and return thread info on success", async () => {
-            sendRequest({
-                id: "22",
-                method: "invokeAgent",
-                body: { agent: "TestAgent", prompt: "Hello, agent!" },
-            });
-
-            // Wait for async invoke
-            await new Promise((resolve) => setTimeout(resolve, 10));
-
-            expect(mockAgent.invoke).toHaveBeenCalled();
-            const response = getLastResponse();
-            expect(response.id).toBe("22");
-            expect(response.success).toBe(true);
-            expect(response.result).toMatchObject({
-                threadId: "thread-123",
-                status: "invoked",
-            });
-        });
-
-        it("should invoke agent with empty prompt if not provided", async () => {
-            sendRequest({
-                id: "23",
-                method: "invokeAgent",
-                body: { agent: "TestAgent" },
-            });
-
-            // Wait for async invoke
-            await new Promise((resolve) => setTimeout(resolve, 10));
-
-            expect(mockAgent.invoke).toHaveBeenCalledWith(
-                "",
-                undefined,
-                expect.anything(),
-                undefined
-            );
-        });
-
-        it("should pass threadId if provided", async () => {
-            sendRequest({
-                id: "24",
-                method: "invokeAgent",
-                body: { agent: "TestAgent", prompt: "Continue...", threadId: "existing-thread" },
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, 10));
-
-            expect(mockAgent.invoke).toHaveBeenCalledWith(
-                "Continue...",
-                "existing-thread",
-                expect.anything(),
-                undefined
-            );
-        });
-
-        it("should pass attachments if provided", async () => {
-            const attachments = [
-                { name: "test.txt", content: "SGVsbG8gV29ybGQ=", mimeType: "text/plain" },
-            ];
-            sendRequest({
-                id: "25a",
-                method: "invokeAgent",
-                body: { agent: "TestAgent", prompt: "Check this file", attachments },
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, 10));
-
-            expect(mockAgent.invoke).toHaveBeenCalledWith(
-                "Check this file",
-                undefined,
-                expect.anything(),
-                attachments
-            );
-        });
-
-        it("should return error on agent invoke failure", async () => {
-            mockAgent.invoke.mockRejectedValue(new Error("Agent failed"));
-
-            sendRequest({
-                id: "25",
-                method: "invokeAgent",
-                body: { agent: "TestAgent", prompt: "Hello" },
-            });
-
-            // Wait for async rejection
-            await new Promise((resolve) => setTimeout(resolve, 10));
-
-            const response = getLastResponse();
-            expect(response.id).toBe("25");
-            expect(response.success).toBe(false);
-            expect(response.errorObj?.code).toBe("INTERNAL_ERROR");
-        });
-
-        it("should handle no body at all", () => {
-            sendRequest({
-                id: "26",
-                method: "invokeAgent",
-            });
-
-            const response = getLastResponse();
-            expect(response.success).toBe(false);
-            expect(response.errorObj?.code).toBe("INVALID_PARAMS");
         });
     });
 
