@@ -75,10 +75,10 @@ func (m *DebugModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "up", "k", "wheel down":
+		case "up", "k":
 			m.scrollOffset++
 			m.autoScroll = false
-		case "down", "j", "wheel up":
+		case "down", "j":
 			if m.scrollOffset > 0 {
 				m.scrollOffset--
 			}

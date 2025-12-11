@@ -1,27 +1,31 @@
 import { Toolkit, ToolkitProps } from "../src/tools/toolkit";
-import { ITool, Schema, ToolArgBuilder } from "../src/tools/tool";
+import { ITool, ToolArg } from "../src/tools/tool";
 
 // Mock tool implementation for testing
 class MockTool implements ITool {
     public name: string;
     public description: string;
-    public schema: Schema;
+    private args: Record<string, ToolArg>;
     private executeResult: unknown;
 
     constructor(
         name: string,
         description: string,
-        args: Record<string, ToolArgBuilder> = {},
+        args: Record<string, ToolArg> = {},
         executeResult: unknown = {}
     ) {
         this.name = name;
         this.description = description;
-        this.schema = Schema.objectValue(args);
+        this.args = args;
         this.executeResult = executeResult;
     }
 
     execute(_args: Record<string, unknown>): unknown {
         return this.executeResult;
+    }
+
+    produceArgs(): Record<string, ToolArg> {
+        return this.args;
     }
 }
 
@@ -166,9 +170,21 @@ describe("Toolkit", () => {
 
     describe("integration with ITool", () => {
         it("should work with tools that have complex args", () => {
-            const complexArgs: Record<string, ToolArgBuilder> = {
-                query: new ToolArgBuilder("string", "Search query", true),
-                limit: new ToolArgBuilder("number", "Max results", false, 10),
+            const complexArgs: Record<string, ToolArg> = {
+                query: {
+                    name: "query",
+                    argType: "string",
+                    description: "Search query",
+                    required: true,
+                    defaultValue: undefined,
+                },
+                limit: {
+                    name: "limit",
+                    argType: "number",
+                    description: "Max results",
+                    required: false,
+                    defaultValue: 10,
+                },
             };
             const tool = new MockTool("searchTool", "Search for items", complexArgs);
             const toolkit = new Toolkit({
@@ -176,7 +192,7 @@ describe("Toolkit", () => {
                 tools: [tool],
             });
 
-            expect(toolkit.tools[0].schema?.properties).toEqual(complexArgs);
+            expect(toolkit.tools[0].produceArgs()).toEqual(complexArgs);
         });
 
         it("should work with tools that return results", () => {
