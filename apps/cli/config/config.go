@@ -11,8 +11,7 @@ const ConfigFileName = "shuttl.json"
 
 // Config represents the structure of shuttl.json
 type Config struct {
-	App            string `json:"app"`
-	OrganizationID *int   `json:"organization_id"`
+	App string `json:"app"`
 }
 
 // LoadConfig looks for shuttl.json in the current directory and parent directories
@@ -75,3 +74,13 @@ func FindConfigFileFrom(startDir string) (string, error) {
 func GetConfigDir(configPath string) string {
 	return filepath.Dir(configPath)
 }
+
+
+
+
+
+
+
+
+
+

@@ -55,12 +55,7 @@ func (m *AgentPickerModel) Init() tea.Cmd {
 		agents, err := m.ipcClient.GetAgents(ctx)
 		if err != nil {
 			log.IPC("Failed to get agents: %v", err)
-			switch err.(type) {
-			case *ipc.BadApiStatusError, *ipc.InvalidAgentModelsError:
-				return err
-			default:
-				return AgentsLoadedMsg{Err: m.err}
-			}
+			return AgentsLoadedMsg{Err: fmt.Errorf("failed to get agents: %w", err)}
 		}
 
 		log.IPC("Received %d agents", len(agents))

@@ -36,26 +36,16 @@
   ],
   "targetDefaults": {
     "e2e-ci--**/*": {
-      "dependsOn": [
-        "^next:build"
-      ]
+      "dependsOn": ["^next:build"]
     },
     "@nx/js:tsc": {
       "cache": true,
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "default",
-        "^default"
-      ]
+      "dependsOn": ["^build"],
+      "inputs": ["default", "^default"]
     },
     "@nx/vite:test": {
       "cache": true,
-      "inputs": [
-        "default",
-        "^default"
-      ]
+      "inputs": ["default", "^default"]
     }
   },
   "generators": {
@@ -68,8 +58,6 @@
   },
   "nxCloudId": "690ac550e44086a7e8914eae",
   "namedInputs": {
-    "sharedGlobals": [
-      "{workspaceRoot}/go.work"
-    ]
+    "sharedGlobals": ["{workspaceRoot}/go.work"]
   }
 }
