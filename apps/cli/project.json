@@ -1,0 +1,128 @@
+{
+  "name": "cli",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/cli",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "command": "go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:linux-amd64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-linux-amd64"],
+      "options": {
+        "command": "GOOS=linux GOARCH=amd64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-linux-amd64 .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:linux-arm64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-linux-arm64"],
+      "options": {
+        "command": "GOOS=linux GOARCH=arm64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-linux-arm64 .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:darwin-amd64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-darwin-amd64"],
+      "options": {
+        "command": "GOOS=darwin GOARCH=amd64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-darwin-amd64 .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:darwin-arm64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-darwin-arm64"],
+      "options": {
+        "command": "GOOS=darwin GOARCH=arm64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-darwin-arm64 .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:windows-amd64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-windows-amd64.exe"],
+      "options": {
+        "command": "GOOS=windows GOARCH=amd64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-windows-amd64.exe .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:windows-arm64": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist/shuttl-windows-arm64.exe"],
+      "options": {
+        "command": "GOOS=windows GOARCH=arm64 go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl-windows-arm64.exe .",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "build:all": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        "build:linux-amd64",
+        "build:linux-arm64",
+        "build:darwin-amd64",
+        "build:darwin-arm64",
+        "build:windows-amd64",
+        "build:windows-arm64"
+      ]
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go run . dev",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "run": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go run .",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "command": "go test -v ./...",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "{projectRoot}"
+      },
+      "cache": true
+    },
+    "fmt": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go fmt ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": ["lang:go", "type:cli"]
+}
