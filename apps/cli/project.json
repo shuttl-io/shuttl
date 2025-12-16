@@ -3,6 +3,9 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "application",
   "sourceRoot": "apps/cli",
+  "implicitDependencies": [
+    "dashboard/web"
+  ],
   "targets": {
     "build": {
       "executor": "nx:run-commands",
@@ -80,10 +83,14 @@
     },
     "dev": {
       "executor": "nx:run-commands",
+      "continuous": true,
       "options": {
-        "command": "go run . dev",
-        "cwd": "{projectRoot}"
-      }
+        "command": "{projectRoot}/dist/shuttl"
+      },
+      "dependsOn": [
+        "dashboard/web:dev",
+        "build"
+      ]
     },
     "run": {
       "executor": "nx:run-commands",
