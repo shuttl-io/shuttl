@@ -146,3 +146,5 @@ func LogLevelStyle(level string) lipgloss.Style {
 
 
 
+
+

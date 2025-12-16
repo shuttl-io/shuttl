@@ -144,12 +144,3 @@ func IsLoggedIn() bool {
 	}
 	return tokens.ExpiresAt.After(time.Now())
 }
-
-
-
-
-
-
-
-
-
