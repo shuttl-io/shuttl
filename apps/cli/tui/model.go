@@ -22,6 +22,17 @@ type AgentsLoadedMsg struct {
 	Err    error
 }
 
+type WarningScreenDetails struct {
+	Title       string
+	Description string
+	Action      string
+}
+
+// DisconnectionWarning is shown when the IPC client unexpectedly loses connection
+type DisconnectionWarning struct {
+	Reason string
+}
+
 // IPCOutputMsg is sent when output is received from the IPC client
 type IPCOutputMsg struct {
 	Output ipc.OutputLine
@@ -34,24 +45,26 @@ type IPCErrorMsg struct {
 
 // Model is the main TUI model
 type Model struct {
-	currentScreen      ScreenNumber
-	screens            []Screen
-	activeScreenIndex  int
-	width              int
-	height             int
-	ipcClient          *ipc.Client
-	quitting           bool
-	showingWarning     bool
-	warningSecondsLeft int
-	demoMode           bool
-	rootCtx            context.Context
-	cancel             context.CancelFunc
+	currentScreen        ScreenNumber
+	screens              []Screen
+	activeScreenIndex    int
+	width                int
+	height               int
+	ipcClient            *ipc.Client
+	quitting             bool
+	showingWarning       bool
+	warningSecondsLeft   int
+	demoMode             bool
+	rootCtx              context.Context
+	cancel               context.CancelFunc
+	warningScreenDetails *WarningScreenDetails
+	disconnectionWarning *DisconnectionWarning
 }
 
 // NewModel creates a new TUI model
 func NewModel(client *ipc.Client) Model {
 	agentPicker := NewAgentPickerModel([]Agent{}, client)
-	chat := NewChatModel()
+	chat := NewChatModel(client)
 	logs := NewLogsModel()
 	debug := NewDebugModel()
 	rootCtx, cancel := context.WithCancel(context.Background())
@@ -67,15 +80,16 @@ func NewModel(client *ipc.Client) Model {
 	showWarning := client == nil
 
 	return Model{
-		currentScreen:      ScreenAgentPicker,
-		screens:            screens,
-		activeScreenIndex:  0,
-		ipcClient:          client,
-		showingWarning:     showWarning,
-		warningSecondsLeft: 10,
-		demoMode:           false,
-		rootCtx:            rootCtx,
-		cancel:             cancel,
+		currentScreen:        ScreenAgentPicker,
+		screens:              screens,
+		activeScreenIndex:    0,
+		ipcClient:            client,
+		showingWarning:       showWarning,
+		warningSecondsLeft:   10,
+		demoMode:             false,
+		rootCtx:              rootCtx,
+		cancel:               cancel,
+		warningScreenDetails: nil,
 	}
 }
 
@@ -206,7 +220,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activateScreenMsg:
 		m.activeScreenIndex = int(msg)
 		return m, nil
-
+	case *ipc.BadApiStatusError:
+		m.showingWarning = true
+		m.warningSecondsLeft = 30
+		m.warningScreenDetails = &WarningScreenDetails{
+			Title:       fmt.Sprintf("API returned status %d: %s", msg.StatusCode, msg.Body),
+			Description: "The API returned a status code that was not 200. Please check your API URL and try again.",
+		}
+		return m, tickCmd()
+	case *ipc.InvalidAgentModelsError:
+		m.showingWarning = true
+		m.warningSecondsLeft = 10
+		availableModels := []string{}
+		for _, model := range msg.AvailableModels {
+			availableModels = append(availableModels, model.Name)
+		}
+		m.warningScreenDetails = &WarningScreenDetails{
+			Title:       fmt.Sprintf("Agents have invalid models: %v", msg.Agents),
+			Description: "The agents have invalid models. Please check your API URL and try again.",
+			Action:      "Available models: " + strings.Join(availableModels, ", "),
+		}
+		return m, tickCmd()
 	case activateScreenObjMsg:
 		obj := msg.obj
 		for i, screen := range m.screens {
@@ -222,6 +256,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.warningSecondsLeft--
 			if m.warningSecondsLeft <= 0 {
 				m.showingWarning = false
+				m.warningScreenDetails = nil
 				// If we have an IPC client, request agents
 				if m.ipcClient != nil && m.ipcClient.IsRunning() {
 					return m, requestAgentsCmd(m.ipcClient)
@@ -231,14 +266,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.ipcClient != nil && m.ipcClient.IsRunning() {
 			log.Debug("IPC client is running, sending tick")
-		} else if m.ipcClient != nil && !m.ipcClient.IsRunning() {
-			log.Error("Unexpectedly lost IPC client connection, quitting")
-			m.quitting = true
-			return m, tea.Quit
+		} else if m.ipcClient != nil && !m.ipcClient.IsRunning() && m.disconnectionWarning == nil {
+			log.Error("Unexpectedly lost IPC client connection")
+			m.disconnectionWarning = &DisconnectionWarning{
+				Reason: "The child process has unexpectedly terminated.",
+			}
 		}
 		return m, tickCmd()
 
 	case tea.KeyMsg:
+		// Handle disconnection warning - only allow quit
+		if m.disconnectionWarning != nil {
+			switch msg.String() {
+			case "ctrl+q", "ctrl+c", "q", "enter", " ", "esc":
+				m.quitting = true
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
 		// Handle warning screen
 		if m.showingWarning {
 			switch msg.String() {
@@ -277,8 +323,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Don't process screen updates while showing warning
-	if m.showingWarning {
+	// Don't process screen updates while showing warning or disconnection
+	if m.showingWarning || m.disconnectionWarning != nil {
 		return m, nil
 	}
 
@@ -308,6 +354,11 @@ func (m Model) View() string {
 		return "👋 Goodbye!\n"
 	}
 
+	// Show disconnection warning if connection was lost
+	if m.disconnectionWarning != nil {
+		return m.renderDisconnectionWarning()
+	}
+
 	// Show warning screen if no config
 	if m.showingWarning {
 		return m.renderWarningScreen()
@@ -327,6 +378,13 @@ func (m Model) View() string {
 
 func (m Model) renderWarningScreen() string {
 	var b strings.Builder
+	warningScreenDetails := m.warningScreenDetails
+	if warningScreenDetails == nil {
+		warningScreenDetails = &WarningScreenDetails{
+			Title:       "No shuttl.json configuration found!",
+			Description: "The CLI could not find a shuttl.json file in the current directory or any parent directory.",
+		}
+	}
 
 	// Calculate center positioning
 	warningBox := lipgloss.NewStyle().
@@ -344,19 +402,24 @@ func (m Model) renderWarningScreen() string {
 		Foreground(lipgloss.Color("#F59E0B")).
 		Bold(true).
 		MarginTop(1).
-		Render("No shuttl.json configuration found!")
+		Render(warningScreenDetails.Title)
 
 	description := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#9CA3AF")).
 		MarginTop(1).
 		Width(50).
 		Align(lipgloss.Center).
-		Render("The CLI could not find a shuttl.json file in the current directory or any parent directory.")
-
-	configExample := lipgloss.NewStyle().
+		Render(warningScreenDetails.Description)
+	// if m.warningScreenDetails.Action != "" {
+	configExample := ""
+	configExampleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6B7280")).
-		MarginTop(1).
-		Render("Expected format:\n\n  {\n    \"app\": \"./path/to/your/app\"\n  }")
+		MarginTop(1)
+	if warningScreenDetails.Action == "" {
+		configExample = configExampleStyle.Render("Expected format:\n\n  {\n    \"app\": \"./path/to/your/app\"\n  }")
+	} else {
+		configExample = configExampleStyle.Render(warningScreenDetails.Action)
+	}
 
 	countdown := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#EF4444")).
@@ -385,6 +448,110 @@ func (m Model) renderWarningScreen() string {
 		countdown,
 		skipHint,
 		demoNote,
+	)
+
+	box := warningBox.Render(content)
+
+	// Center the box on screen
+	if m.width > 0 && m.height > 0 {
+		boxWidth := lipgloss.Width(box)
+		boxHeight := lipgloss.Height(box)
+
+		paddingLeft := (m.width - boxWidth) / 2
+		paddingTop := (m.height - boxHeight) / 2
+
+		if paddingLeft < 0 {
+			paddingLeft = 0
+		}
+		if paddingTop < 0 {
+			paddingTop = 0
+		}
+
+		// Add vertical padding
+		for i := 0; i < paddingTop; i++ {
+			b.WriteString("\n")
+		}
+
+		// Add horizontal padding to each line
+		lines := strings.Split(box, "\n")
+		for _, line := range lines {
+			b.WriteString(strings.Repeat(" ", paddingLeft))
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString(box)
+	}
+
+	return b.String()
+}
+
+func (m Model) renderDisconnectionWarning() string {
+	var b strings.Builder
+
+	// Large, dramatic disconnection warning
+	warningBox := lipgloss.NewStyle().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("#EF4444")).
+		Padding(3, 6).
+		Align(lipgloss.Center)
+
+	// Large skull/warning icon block
+	dangerIcon := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#EF4444")).
+		Bold(true).
+		Render("💀  CONNECTION LOST  💀")
+
+	// Big prominent title
+	title := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#EF4444")).
+		Bold(true).
+		MarginTop(2).
+		Render("╔══════════════════════════════════════════╗\n" +
+			"║      CHILD PROCESS DISCONNECTED!        ║\n" +
+			"╚══════════════════════════════════════════╝")
+
+	// Reason
+	reason := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FBBF24")).
+		MarginTop(1).
+		Bold(true).
+		Render(m.disconnectionWarning.Reason)
+
+	// Description
+	description := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#9CA3AF")).
+		MarginTop(2).
+		Width(55).
+		Align(lipgloss.Center).
+		Render("The CLI has lost communication with the Shuttl application.\n" +
+			"This may have been caused by a crash, timeout, or the process being killed.")
+
+	// What to do
+	whatToDo := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#60A5FA")).
+		MarginTop(2).
+		Width(55).
+		Align(lipgloss.Center).
+		Render("Please check your application logs and restart the CLI.")
+
+	// Exit hint
+	exitHint := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#F9FAFB")).
+		Background(lipgloss.Color("#EF4444")).
+		Bold(true).
+		MarginTop(2).
+		Padding(0, 2).
+		Render("Press Q, ENTER, or ESC to exit")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		dangerIcon,
+		title,
+		reason,
+		description,
+		whatToDo,
+		exitHint,
 	)
 
 	box := warningBox.Render(content)

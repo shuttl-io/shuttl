@@ -1,5 +1,6 @@
 using Shuttl.Models;
 using Shuttl.Models.Tools;
+using Shuttl.Models.Secrets;
 
 namespace Shuttl.Test;
 
@@ -23,7 +24,7 @@ public class Program
         var model = new Model(new ModelProps
         {
             Identifier = "test-model",
-            Key = "test-key-12345"
+            Key = Secret.fromEnv("OPENAI_API_KEY")
         });
         
         // Create toolkit with tools
@@ -127,6 +128,15 @@ public class MathTool : ITool
         };
     }
 }
+
+
+
+
+
+
+
+
+
 
 
 
