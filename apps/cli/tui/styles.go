@@ -102,6 +102,11 @@ var (
 			Foreground(mutedColor).
 			MarginTop(1)
 
+	// Loading indicator style
+	LoadingStyle = lipgloss.NewStyle().
+			Foreground(accentColor).
+			Italic(true)
+
 	// Box styles
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -136,15 +141,3 @@ func LogLevelStyle(level string) lipgloss.Style {
 		return lipgloss.NewStyle()
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-

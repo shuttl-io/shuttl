@@ -1,26 +1,26 @@
 import { App } from "../src/app";
 import { Agent } from "../src/agent";
 import { Model } from "../src/model";
+import { Secret } from "../src/secrets";
+import { IModelFactory, IModelStreamer, ModelContent, IModel, ModelResponse } from "../src/models/types";
 import { Toolkit } from "../src/tools/toolkit";
 import { IServer } from "../src/Server";
-import { ITool, ToolArg } from "../src/tools/tool";
+import { ITool, Schema, ToolArgBuilder } from "../src/tools/tool";
 
 // Mock tool implementation for testing
 class MockTool implements ITool {
     public name: string;
     public description: string;
+    public schema: Schema;
 
-    constructor(name: string, description: string) {
+    constructor(name: string, description: string, args: Record<string, ToolArgBuilder> = {}) {
         this.name = name;
         this.description = description;
+        this.schema = Schema.objectValue(args);
     }
 
     execute(_args: Record<string, unknown>): unknown {
         return { executed: true };
-    }
-
-    produceArgs(): Record<string, ToolArg> {
-        return {};
     }
 }
 
@@ -49,13 +49,49 @@ class MockServer implements IServer {
     }
 }
 
+// Mock streamer for testing
+class MockStreamer implements IModelStreamer {
+    public receivedResponses: ModelResponse[] = [];
+    public receivedModels: IModel[] = [];
+
+    async recieve(model: IModel, content: ModelResponse): Promise<void> {
+        this.receivedModels.push(model);
+        this.receivedResponses.push(content);
+    }
+}
+
+// Mock model for testing without real API calls
+class MockModel implements IModel {
+    public readonly threadId?: string = "mock-thread-id";
+
+    async invoke(prompt: ModelContent[], streamer: IModelStreamer): Promise<void> {
+        await streamer.recieve(this, {
+            eventName: "response.output_text.done",
+            data: {
+                typeName: "output_text",
+                outputText: {
+                    outputType: "output_text",
+                    text: `Mock response to: ${prompt[0]?.content || "empty"}`,
+                },
+            },
+        });
+    }
+}
+
+// Mock factory for testing
+class MockModelFactory implements IModelFactory {
+    async create(_props: { systemPrompt: string }): Promise<IModel> {
+        return new MockModel();
+    }
+}
+
 describe("App", () => {
     let mockServer: MockServer;
-    let defaultModel: Model;
+    let defaultModelFactory: IModelFactory;
 
     beforeEach(() => {
         mockServer = new MockServer();
-        defaultModel = new Model({ identifier: "gpt-4", key: "test-key" });
+        defaultModelFactory = Model.openAI("gpt-4", Secret.fromEnv("OPENAI_API_KEY"));
     });
 
     describe("constructor", () => {
@@ -105,7 +141,7 @@ describe("App", () => {
                 name: "TestAgent",
                 toolkits: [],
                 systemPrompt: "Test prompt",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -120,13 +156,13 @@ describe("App", () => {
                 name: "Agent1",
                 toolkits: [],
                 systemPrompt: "Prompt 1",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
             const agent2 = new Agent({
                 name: "Agent2",
                 toolkits: [],
                 systemPrompt: "Prompt 2",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent1);
@@ -144,7 +180,7 @@ describe("App", () => {
                 name: "TestAgent",
                 toolkits: [toolkit],
                 systemPrompt: "Test prompt",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -161,7 +197,7 @@ describe("App", () => {
                 name: "TestAgent",
                 toolkits: [toolkit1, toolkit2],
                 systemPrompt: "Test prompt",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -178,13 +214,13 @@ describe("App", () => {
                 name: "Agent1",
                 toolkits: [sharedToolkit],
                 systemPrompt: "Prompt 1",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
             const agent2 = new Agent({
                 name: "Agent2",
                 toolkits: [sharedToolkit],
                 systemPrompt: "Prompt 2",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent1);
@@ -200,7 +236,7 @@ describe("App", () => {
                 name: "TestAgent",
                 toolkits: [],
                 systemPrompt: "Test prompt",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -217,7 +253,7 @@ describe("App", () => {
                 name: "NoToolkitAgent",
                 toolkits: [],
                 systemPrompt: "No toolkits",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -324,13 +360,13 @@ describe("App", () => {
                 name: "SearchAgent",
                 toolkits: [searchToolkit],
                 systemPrompt: "You are a search agent",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
             const crudAgent = new Agent({
                 name: "CRUDAgent",
                 toolkits: [crudToolkit],
                 systemPrompt: "You are a CRUD agent",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             // Add agents to app
@@ -355,7 +391,7 @@ describe("App", () => {
                 name: "RefAgent",
                 toolkits: [toolkit],
                 systemPrompt: "Test",
-                model: defaultModel,
+                model: defaultModelFactory,
             });
 
             app.addAgent(agent);
@@ -444,3 +480,38 @@ describe("App", () => {
     });
 });
 
+describe("Model factory methods", () => {
+    describe("Model.openAI()", () => {
+        it("should create an OpenAI model factory with env secret", () => {
+            const secret = Secret.fromEnv("OPENAI_API_KEY");
+            const factory = Model.openAI("gpt-4", secret);
+
+            expect(factory).toBeDefined();
+            expect(typeof factory.create).toBe("function");
+        });
+
+        it("should create model factories with different identifiers", () => {
+            const secret = Secret.fromEnv("OPENAI_API_KEY");
+            const gpt4 = Model.openAI("gpt-4", secret);
+            const gpt35 = Model.openAI("gpt-3.5-turbo", secret);
+
+            expect(gpt4).toBeDefined();
+            expect(gpt35).toBeDefined();
+        });
+
+        it("should create model instances from mock factory and invoke with streamer", async () => {
+            const mockFactory = new MockModelFactory();
+
+            const model = await mockFactory.create({
+                systemPrompt: "You are a helpful assistant.",
+            });
+
+            const streamer = new MockStreamer();
+            await model.invoke([{ content: "Hello", role: "user" }], streamer);
+
+            expect(streamer.receivedResponses.length).toBeGreaterThan(0);
+            expect(streamer.receivedModels[0]).toBe(model);
+            expect(model.threadId).toBe("mock-thread-id");
+        });
+    });
+});

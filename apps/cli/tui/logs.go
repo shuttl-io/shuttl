@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/shuttl-ai/cli/log"
 )
 
 // LogsModel handles the logs view
@@ -96,14 +97,43 @@ func (m *LogsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Message:   msg.Content,
 		})
 		return m, nil
+
+	case chatStreamMsg:
+		if msg.error != nil {
+			m.AddLog(LogEntry{
+				Timestamp: time.Now().Format("15:04:05"),
+				Level:     "error",
+				AgentID:   msg.agentID,
+				Message:   fmt.Sprintf("Error: %+v", msg.error),
+			})
+			return m, nil
+		}
+		if msg.currentMessage.Type != "output_text_delta" {
+			m.AddLog(LogEntry{
+				Timestamp: time.Now().Format("15:04:05"),
+				Level:     msg.currentMessage.Type,
+				AgentID:   msg.agentID,
+				Message:   msg.currentMessage.String(),
+			})
+		}
+		return m, nil
+	case toolCallMsg:
+		log.Debug("toolCallMsg: %+v", msg.toolCall)
+		m.AddLog(LogEntry{
+			Timestamp: time.Now().Format("15:04:05"),
+			Level:     "tool_call",
+			AgentID:   msg.toolCall.ToolCall.Name,
+			Message:   fmt.Sprintf("Tool call: %+v", msg.toolCall),
+		})
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.SetSize(int(msg.Width), int(msg.Height))
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "up", "k":
+		case "up", "k", "wheel down":
 			m.scrollOffset++
-		case "down", "j":
+		case "down", "j", "wheel up":
 			if m.scrollOffset > 0 {
 				m.scrollOffset--
 			}
@@ -305,5 +335,5 @@ func (m LogsModel) renderLogEntry(log LogEntry) string {
 	}
 	agent := lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED")).Render(fmt.Sprintf("[%s]", agentName))
 
-	return fmt.Sprintf("%s %s %s %s", timestamp, level, agent, log.Message)
+	return lipgloss.NewStyle().Width(m.width).Render(fmt.Sprintf("%s %s %s %s", timestamp, level, agent, log.Message))
 }

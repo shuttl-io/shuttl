@@ -4,7 +4,8 @@
   "projectType": "application",
   "sourceRoot": "apps/cli",
   "implicitDependencies": [
-    "dashboard/web"
+    "dashboard/web",
+    "@shuttl-io/core"
   ],
   "targets": {
     "build": {
@@ -14,6 +15,9 @@
         "command": "go build -ldflags \"-X github.com/shuttl-ai/cli/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X github.com/shuttl-ai/cli/cmd.GitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') -X github.com/shuttl-ai/cli/cmd.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)\" -o dist/shuttl .",
         "cwd": "{projectRoot}"
       },
+      "dependsOn": [
+        "@shuttl-io/core:build"
+      ],
       "cache": true
     },
     "build:linux-amd64": {

@@ -4,8 +4,9 @@ package ipc
 
 // ChatRequest represents a chat message request payload
 type ChatRequest struct {
-	AgentID string `json:"agent_id"`
-	Message string `json:"message"`
+	Agent    string  `json:"agent"`
+	ThreadID *string `json:"thread_id,omitempty"`
+	Prompt   string  `json:"prompt"`
 }
 
 // ChatResponse represents a chat message response payload
@@ -48,8 +49,3 @@ const (
 	EventLog         = "log"
 	EventReady       = "ready"
 )
-
-
-
-
-
