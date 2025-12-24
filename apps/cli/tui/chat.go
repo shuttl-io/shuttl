@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/shuttl-ai/cli/ipc"
+	"github.com/shuttl-ai/cli/log"
 )
 
 // ChatModel handles the chat interface
@@ -19,14 +22,16 @@ type ChatModel struct {
 	height        int
 	scrollOffset  int
 	screenIndex   int
+	ipcClient     *ipc.Client
 }
 
 // NewChatModel creates a new chat model
-func NewChatModel() *ChatModel {
+func NewChatModel(ipcClient *ipc.Client) *ChatModel {
 	return &ChatModel{
 		sessions:    make(map[string]*ChatSession),
 		agentOrder:  []string{},
 		screenIndex: 0,
+		ipcClient:   ipcClient,
 	}
 }
 
@@ -52,8 +57,9 @@ func (m *ChatModel) SetSize(width, height int) {
 func (m *ChatModel) StartSession(agent Agent) {
 	if _, exists := m.sessions[agent.ID]; !exists {
 		m.sessions[agent.ID] = &ChatSession{
-			Agent:    agent,
-			Messages: []ChatMessage{},
+			Agent:               agent,
+			Messages:            []*ChatMessage{},
+			currentMessageIndex: -1,
 		}
 		m.agentOrder = append(m.agentOrder, agent.ID)
 	}
@@ -107,10 +113,11 @@ func (m *ChatModel) SwitchToPrevAgent() {
 func (m *ChatModel) AddMessage(role, content string) {
 	session := m.GetActiveSession()
 	if session != nil {
-		session.Messages = append(session.Messages, ChatMessage{
-			Role:    role,
-			Content: content,
-			AgentID: m.activeAgentID,
+		session.Messages = append(session.Messages, &ChatMessage{
+			Role:        role,
+			Content:     content,
+			AgentID:     m.activeAgentID,
+			IsCompleted: true,
 		})
 	}
 }
@@ -126,6 +133,50 @@ func (m *ChatModel) GetInput() string {
 	return m.input
 }
 
+type chatStreamMsg struct {
+	currentMessage *ipc.ChatParsedResult
+	error          error
+	channel        chan *ipc.ChatParsedResult
+	errChan        chan error
+	agentID        string
+}
+
+type endChatStreamMsg struct {
+}
+
+type toolCallMsg struct {
+	toolCall *ipc.ToolCallResult
+}
+
+func streamChat(channel chan *ipc.ChatParsedResult, errChan chan error, agentID string) tea.Cmd {
+	return func() tea.Msg {
+		currentMessage, ok := <-channel
+		if !ok {
+			return endChatStreamMsg{}
+		}
+		var err error
+		select {
+		case err = <-errChan:
+		default:
+			err = nil
+		}
+		valu := chatStreamMsg{
+			currentMessage: currentMessage,
+			error:          err,
+			channel:        channel,
+			errChan:        errChan,
+			agentID:        agentID,
+		}
+		return valu
+	}
+}
+
+func updateMessage(textDelta *ipc.TextDeltaResult) tea.Cmd {
+	return func() tea.Msg {
+		return *textDelta
+	}
+}
+
 // Update handles input for the chat
 func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -136,12 +187,45 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ChatMessage:
 		m.AddMessage(msg.Role, msg.Content)
 		if msg.Role == "user" {
-			return m, func() tea.Msg {
-				return ChatMessage{Role: "assistant", Content: "This is a simulated response from the agent.", AgentID: m.activeAgentID}
+			// Set waiting state before starting the chat
+			session := m.GetActiveSession()
+			if session != nil {
+				session.IsWaiting = true
 			}
+			channel, errChan := m.ipcClient.StartChat(context.Background(), m.activeAgentID, m.input)
+			return m, streamChat(channel, errChan, m.activeAgentID)
 		}
 		return m, nil
 
+	case ipc.TextDeltaResult:
+		m.GetActiveSession().UpdateMessage(msg.OutputTextDelta.Delta, msg.OutputTextDelta.SequenceNumber)
+		return m, nil
+
+	case chatStreamMsg:
+		session := m.GetActiveSession()
+		if session == nil {
+			log.Error("No active session")
+			return m, nil
+		}
+
+		if msg.currentMessage.Type == "output_text_delta" {
+			return m, tea.Batch(
+				updateMessage(msg.currentMessage.TextDelta),
+				streamChat(msg.channel, msg.errChan, msg.agentID),
+			)
+		}
+		if msg.currentMessage.Type == "output_text" {
+			session.CommitMessage()
+		}
+
+		return m, streamChat(msg.channel, msg.errChan, msg.agentID)
+		// for result := range msg.channel {
+		// 	if result.Status != nil && result.Status.Status == "completed" {
+		// 		return m, nil
+		// 	}
+		// 	m.AddMessage("assistant", result.FinalOutput.OutputText.Text)
+		// }
+		// return m, nil
 	case selectAgentMsg:
 		m.StartSession(*msg.agent)
 		return m, nil
@@ -276,10 +360,16 @@ func (m *ChatModel) View() string {
 			if maxWidth < 20 {
 				maxWidth = 20
 			}
-			content := wrapText(prefix+msg.Content, maxWidth)
-			b.WriteString(style.Render(content))
+			// content := wrapText(prefix+msg.Content, maxWidth)
+			b.WriteString(style.Width(maxWidth).Render(prefix + msg.String()))
 			b.WriteString("\n")
 		}
+	}
+
+	// Loading indicator
+	if session.IsWaiting {
+		b.WriteString(LoadingStyle.Render("⏳ Thinking..."))
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")

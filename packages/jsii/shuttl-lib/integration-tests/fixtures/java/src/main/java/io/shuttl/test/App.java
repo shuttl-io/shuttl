@@ -1,6 +1,7 @@
 package io.shuttl.test;
 
 import io.shuttl.module.shuttl.*;
+import io.shuttl.module.shuttl.secrets.Secret;
 import io.shuttl.module.shuttl.tools.*;
 
 import java.util.Arrays;
@@ -133,7 +134,7 @@ public class App {
         // Create model
         Model model = Model.builder()
             .identifier("test-model")
-            .key("test-key-12345")
+            .key(Secret.fromEnv("OPENAI_API_KEY"))
             .build();
         
         // Create toolkit with tools
@@ -158,6 +159,15 @@ public class App {
         app.serve();
     }
 }
+
+
+
+
+
+
+
+
+
 
 
 

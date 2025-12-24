@@ -122,7 +122,7 @@ export class OpenAI implements IModel {
         const body = {
                 model: this.identifier,
                 conversation: this.threadId,
-                input: this.inputs.map(input => this.createInput(input)),
+                input: this.inputs.map(this.createInput),
                 parallel_tool_calls: false,
                 stream,
                 tools: tools ?? [],
@@ -132,7 +132,6 @@ export class OpenAI implements IModel {
             data: {
                 typeName: "response.requested",
                 requested: body,
-                threadId: this.threadId,
             },
         });
         try {
@@ -163,13 +162,6 @@ export class OpenAI implements IModel {
                     }
                     const { done, value } = result;
                     if (done) {
-                        streamer.recieve(this, {
-                            eventName: "overall.completed",
-                            data: {
-                                typeName: "overall.completed",
-                            },
-                            threadId: this.threadId,
-                        });
                         break;
                     }
                     
@@ -198,17 +190,9 @@ export class OpenAI implements IModel {
                         }
                     }
                 }
-               
             } else {
                 const data = await response.json();
                 streamer.recieve(this, data as any);
-                streamer.recieve(this, {
-                    eventName: "overall.completed",
-                    data: {
-                        typeName: "overall.completed",
-                    },
-                    threadId: this.threadId,
-                });
             }
 
         }
@@ -219,7 +203,6 @@ export class OpenAI implements IModel {
     }
 
     private createInputContent(content: InputContent) {
-        
         if (content.typeName === "image") {
             return {
                 type: "input_image",
@@ -227,15 +210,6 @@ export class OpenAI implements IModel {
             };
         }
         if (content.typeName === "file") {
-            // Handle file attachments with base64 content
-            if (content.fileData) {
-                return {
-                    type: "input_file",
-                    filename: content.fileData.name,
-                    file_data: `data:${content.fileData.mimeType || "application/octet-stream"};base64,${content.fileData.content}`,
-                };
-            }
-            // Fallback to URL-based file reference
             return {
                 type: "input_file",
                 file_url: content.file,
@@ -253,14 +227,10 @@ export class OpenAI implements IModel {
             // if content is not a string, content should be transformed to a chat GPT input
             if (typeof realInput.content !== "string") {
                 if (isInputContentArray(realInput.content)) {
-                    const content = realInput.content.flatMap(c => this.createInputContent(c));
+                    const content = realInput.content.map(this.createInputContent);
                     return {role: realInput.role, content: content};
                 } else if (isInputContent(realInput.content)) {
-                    let content = this.createInputContent(realInput.content);
-                    if (Array.isArray(content)) {
-                        return { role: realInput.role, content: content };
-                    }
-                    return { role: realInput.role, content: [content] };
+                    return { role: realInput.role, content: this.createInputContent(realInput.content) };
                 }
             }
             return { role: realInput.role, content: realInput.content };

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -74,6 +75,11 @@ const (
 )
 
 // Client manages IPC communication with a Shuttl application
+type SpecialChannel struct {
+	outputChan chan OutputLine
+	errChan    chan error
+}
+
 type Client struct {
 	command []string
 	cmd     *exec.Cmd
@@ -97,7 +103,9 @@ type Client struct {
 	wg sync.WaitGroup
 
 	// Mutex for sending messages
-	sendMu sync.Mutex
+	sendMu            sync.Mutex
+	specialChannels   map[string]*SpecialChannel
+	specialChannelsMu sync.RWMutex
 }
 
 // NewClient creates a new IPC client for the given command and arguments
@@ -105,12 +113,13 @@ func NewClient(command []string) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Client{
-		command:    command,
-		outputChan: make(chan OutputLine, 100),
-		errChan:    make(chan error, 10),
-		state:      StateIdle,
-		ctx:        ctx,
-		cancel:     cancel,
+		command:         command,
+		outputChan:      make(chan OutputLine, 100),
+		errChan:         make(chan error, 10),
+		state:           StateIdle,
+		ctx:             ctx,
+		cancel:          cancel,
+		specialChannels: make(map[string]*SpecialChannel),
 	}
 }
 
@@ -131,6 +140,7 @@ func (c *Client) Start() error {
 
 	// Create the command with arguments
 	c.cmd = exec.CommandContext(c.ctx, c.command[0], c.command[1:]...)
+	c.cmd.Env = append(os.Environ())
 
 	// Get pipes
 	var err error
@@ -198,26 +208,38 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 				output.Message = &msg
 			}
 			if !msg.Success {
-				log.Error("IPC error: %s", msg.ErrorObj)
+				log.Error("IPC error: %+v", msg.ErrorObj)
 			}
 
-			// Non-blocking send to output channel
+			c.specialChannelsMu.RLock()
+			channel, ok := c.specialChannels[msg.ID]
+			c.specialChannelsMu.RUnlock()
+
+			outputChan := c.outputChan
+			errChan := c.errChan
+
+			if ok {
+				outputChan = channel.outputChan
+				errChan = channel.errChan
+			}
+
 			select {
-			case c.outputChan <- output:
+			case outputChan <- output:
 			default:
 				// Channel full, drop oldest
 				select {
-				case <-c.outputChan:
+				case <-outputChan:
 				default:
 				}
-				c.outputChan <- output
+				outputChan <- output
+
+				if err := scanner.Err(); err != nil && c.ctx.Err() == nil {
+					errChan <- fmt.Errorf("%s scanner error: %w", source, err)
+				}
 			}
 		}
 	}
 
-	if err := scanner.Err(); err != nil && c.ctx.Err() == nil {
-		c.errChan <- fmt.Errorf("%s scanner error: %w", source, err)
-	}
 }
 
 // monitorProcess monitors the subprocess and handles cleanup
@@ -233,6 +255,7 @@ func (c *Client) monitorProcess() {
 	}
 
 	// Close the output channel after process exits
+	log.Info("Closing output and error channels")
 	close(c.outputChan)
 	close(c.errChan)
 }
@@ -288,6 +311,59 @@ func (c *Client) SendAsync(req Request) <-chan error {
 	}()
 
 	return errCh
+}
+
+func (c *Client) SendAsyncWithResult(ctx context.Context, req Request) (chan error, chan OutputLine) {
+	errCh := make(chan error, 1)
+	outputChan := make(chan OutputLine, 10)
+
+	specialChannels := &SpecialChannel{
+		outputChan: outputChan,
+		errChan:    errCh,
+	}
+	c.specialChannelsMu.Lock()
+	c.specialChannels[req.ID] = specialChannels
+	c.specialChannelsMu.Unlock()
+
+	c.Send(req)
+
+	return errCh, outputChan
+}
+
+func (c *Client) CloseSpecialChannel(id string) {
+	c.specialChannelsMu.Lock()
+	channel, ok := c.specialChannels[id]
+	if ok {
+		close(channel.outputChan)
+		close(channel.errChan)
+		delete(c.specialChannels, id)
+	}
+	c.specialChannelsMu.Unlock()
+}
+
+func (c *Client) SendAndWaitForResponse(ctx context.Context, req Request) (OutputLine, error) {
+	errCh, outputChan := c.SendAsyncWithResult(ctx, req)
+	defer c.CloseSpecialChannel(req.ID)
+
+	log.Debug("Waiting for response: %+v", req)
+	for {
+		select {
+		case <-ctx.Done():
+			return OutputLine{}, ctx.Err()
+		case err, ok := <-errCh:
+			if !ok {
+				return OutputLine{}, nil
+			}
+			if err != nil {
+				return OutputLine{}, err
+			}
+		case output, ok := <-outputChan:
+			if !ok {
+				return OutputLine{}, nil
+			}
+			return output, nil
+		}
+	}
 }
 
 func getID(messageType MessageType) string {

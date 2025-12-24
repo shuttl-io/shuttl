@@ -1,14 +1,11 @@
-export interface ModelProps {
-    readonly identifier: string;
-    readonly key: string;
-}
+import { ISecret } from "./secrets";
+import {  OpenAIFactory } from "./models/openAi";
+import type { IModelFactory } from "./models/types";
 
 export class Model {
-    public readonly identifier: string;
-    public readonly key: string;
+    protected constructor(){}
 
-    public constructor(props: ModelProps) {
-        this.identifier = props.identifier;
-        this.key = props.key;
+    public static openAI(identifier: string, apiKey: ISecret): IModelFactory {
+        return new OpenAIFactory(identifier, apiKey);
     }
 }
