@@ -2,6 +2,7 @@ import { App } from "../app";
 import { IServer } from "../Server";
 import { stdin, stdout } from "process";
 import { createInterface, Interface } from "readline";
+import { AgentStreamer } from "../agent";
 
 /**
  * Request message format from the host CLI
@@ -204,7 +205,7 @@ export class StdInServer implements IServer {
                             tools: toolkit.tools.map((tool) => ({
                                 name: tool.name,
                                 description: tool.description,
-                                args: tool.produceArgs(),
+                                args: tool.schema?.properties,
                             })),
                         })),
                     });
@@ -221,6 +222,10 @@ export class StdInServer implements IServer {
                         result: { shutting_down: true },
                     });
                     this.stop();
+                    break;
+
+                case "invokeAgent":
+                    this.handleInvokeAgent(request);
                     break;
 
                 default:
@@ -240,6 +245,55 @@ export class StdInServer implements IServer {
                 errorObj: {
                     code: "INTERNAL_ERROR",
                     message: (e as Error).message,
+                },
+            });
+        }
+    }
+
+    private async handleInvokeAgent(request: IPCRequest): Promise<void> {
+        const params = request.body ?? {};
+        const agentName = params.agent as string | undefined;
+        const prompt = (params.prompt as string) ?? "";
+        const threadId = params.threadId as string | undefined ?? undefined;
+        if (!agentName) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeAgent requires 'agent' param",
+                },
+            });
+            return;
+        }
+
+        const agent = this.app!.agents.find((a) => a.name === agentName);
+        if (!agent) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Agent not found: ${agentName}`,
+                },
+            });
+            return;
+        }
+        const streamer = new AgentStreamer(agent, request.id);
+        try {
+            const model = await agent.invoke(prompt, threadId, streamer);
+            this.sendResponse({
+                id: request.id,
+                success: true,
+                result: { threadId: model.threadId, status: "invoked" },
+            });
+        } catch (e) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INTERNAL_ERROR",
+                    message: JSON.stringify(e as any),
                 },
             });
         }

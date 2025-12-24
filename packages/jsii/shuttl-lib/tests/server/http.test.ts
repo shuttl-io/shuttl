@@ -23,6 +23,7 @@ jest.mock("readline", () => ({
 }));
 
 import { StdInServer, IPCRequest, IPCResponse } from "../../src/server/http";
+import { Schema } from "../../src/tools/tool";
 
 describe("StdInServer", () => {
     let server: StdInServer;
@@ -249,8 +250,9 @@ describe("StdInServer", () => {
                 sendRequest({ id: "5", method: "listToolkits" });
 
                 const response = getLastResponse();
+                
                 expect(response.id).toBe("5");
-                expect(response.success).toBe(true);
+                expect(response.success).toEqual(true);
                 expect(response.result).toEqual([]);
             });
 
@@ -258,10 +260,10 @@ describe("StdInServer", () => {
                 const mockTool = {
                     name: "testTool",
                     description: "A test tool",
-                    execute: jest.fn(),
-                    produceArgs: jest.fn().mockReturnValue({
-                        arg1: { name: "arg1", argType: "string", required: true },
+                    schema: Schema.objectValue({
+                        arg1: Schema.stringValue("A test argument").isRequired(),
                     }),
+                    execute: jest.fn(),
                 };
                 const mockToolkit = {
                     name: "TestToolkit",
@@ -284,6 +286,7 @@ describe("StdInServer", () => {
                 sendRequest({ id: "6", method: "listToolkits" });
 
                 const response = getLastResponse();
+                console.log(response);
                 expect(response.success).toBe(true);
                 expect(response.result).toEqual([
                     {
@@ -293,7 +296,8 @@ describe("StdInServer", () => {
                             {
                                 name: "testTool",
                                 description: "A test tool",
-                                args: { arg1: { name: "arg1", argType: "string", required: true } },
+                                args: { 
+                                    arg1: { argType: "string", required: true, description: "A test argument" } },
                             },
                         ],
                     },

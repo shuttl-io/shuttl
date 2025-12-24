@@ -17,6 +17,7 @@ from shuttl.model import (
     Model,
     Toolkit,
     StdInServer,
+    Secret,
 )
 from shuttl.model.tools import ITool, ToolArg
 
@@ -124,7 +125,7 @@ def main():
     # Create model
     model = Model(
         identifier="test-model",
-        key="test-key-12345",
+        key=Secret.fromEnv("OPENAI_API_KEY"),
     )
     
     # Create toolkit with tools
@@ -151,6 +152,15 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
 
 
 
