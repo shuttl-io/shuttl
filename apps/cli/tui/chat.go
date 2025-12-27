@@ -2,9 +2,13 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shuttl-ai/cli/ipc"
@@ -23,15 +27,31 @@ type ChatModel struct {
 	scrollOffset  int
 	screenIndex   int
 	ipcClient     *ipc.Client
+
+	// File picker state
+	filePicker       filepicker.Model
+	showFilePicker   bool
+	attachedFiles    []ipc.FileAttachment
+	filePickerError  string
 }
 
 // NewChatModel creates a new chat model
 func NewChatModel(ipcClient *ipc.Client) *ChatModel {
+	// Initialize file picker
+	fp := filepicker.New()
+	fp.CurrentDirectory, _ = os.Getwd()
+	fp.ShowHidden = false
+	fp.ShowPermissions = false
+	fp.ShowSize = true
+	fp.Height = 15
+
 	return &ChatModel{
-		sessions:    make(map[string]*ChatSession),
-		agentOrder:  []string{},
-		screenIndex: 0,
-		ipcClient:   ipcClient,
+		sessions:      make(map[string]*ChatSession),
+		agentOrder:    []string{},
+		screenIndex:   0,
+		ipcClient:     ipcClient,
+		filePicker:    fp,
+		attachedFiles: []ipc.FileAttachment{},
 	}
 }
 
@@ -40,7 +60,7 @@ func (m *ChatModel) SetScreenIndex(index int) {
 }
 
 func (m *ChatModel) Init() tea.Cmd {
-	return nil
+	return m.filePicker.Init()
 }
 
 func (m *ChatModel) GetTitle() string {
@@ -128,6 +148,98 @@ func (m *ChatModel) ClearInput() {
 	m.cursorPos = 0
 }
 
+// ClearAttachments clears all attached files
+func (m *ChatModel) ClearAttachments() {
+	m.attachedFiles = []ipc.FileAttachment{}
+}
+
+// AttachFile reads a file and adds it to the attachments
+func (m *ChatModel) AttachFile(filePath string) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Determine MIME type based on extension
+	mimeType := getMimeType(filePath)
+
+	attachment := ipc.FileAttachment{
+		Name:     filepath.Base(filePath),
+		Path:     filePath,
+		Content:  base64.StdEncoding.EncodeToString(content),
+		MimeType: mimeType,
+	}
+
+	m.attachedFiles = append(m.attachedFiles, attachment)
+	return nil
+}
+
+// RemoveAttachment removes an attachment by index
+func (m *ChatModel) RemoveAttachment(index int) {
+	if index >= 0 && index < len(m.attachedFiles) {
+		m.attachedFiles = append(m.attachedFiles[:index], m.attachedFiles[index+1:]...)
+	}
+}
+
+// getMimeType returns the MIME type based on file extension
+func getMimeType(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".txt":
+		return "text/plain"
+	case ".md":
+		return "text/markdown"
+	case ".json":
+		return "application/json"
+	case ".xml":
+		return "application/xml"
+	case ".html", ".htm":
+		return "text/html"
+	case ".css":
+		return "text/css"
+	case ".js":
+		return "application/javascript"
+	case ".ts":
+		return "application/typescript"
+	case ".go":
+		return "text/x-go"
+	case ".py":
+		return "text/x-python"
+	case ".rb":
+		return "text/x-ruby"
+	case ".java":
+		return "text/x-java"
+	case ".c", ".h":
+		return "text/x-c"
+	case ".cpp", ".hpp", ".cc":
+		return "text/x-c++"
+	case ".rs":
+		return "text/x-rust"
+	case ".sh", ".bash":
+		return "application/x-sh"
+	case ".yaml", ".yml":
+		return "application/x-yaml"
+	case ".toml":
+		return "application/toml"
+	case ".csv":
+		return "text/csv"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return "application/octet-stream"
+	}
+}
+
 // GetInput returns the current input
 func (m *ChatModel) GetInput() string {
 	return m.input
@@ -179,9 +291,15 @@ func updateMessage(textDelta *ipc.TextDeltaResult) tea.Cmd {
 
 // Update handles input for the chat
 func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle file picker mode first
+	if m.showFilePicker {
+		return m.updateFilePicker(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.SetSize(int(msg.Width), int(msg.Height))
+		m.filePicker.Height = m.height - 10
 		return m, nil
 
 	case ChatMessage:
@@ -192,7 +310,8 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if session != nil {
 				session.IsWaiting = true
 			}
-			channel, errChan := m.ipcClient.StartChat(context.Background(), m.activeAgentID, m.input)
+			channel, errChan := m.ipcClient.StartChatWithAttachments(context.Background(), m.activeAgentID, m.input, m.attachedFiles)
+			m.ClearAttachments()
 			return m, streamChat(channel, errChan, m.activeAgentID)
 		}
 		return m, nil
@@ -231,6 +350,18 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "ctrl+f":
+			// Open file picker
+			if m.GetActiveSession() != nil {
+				m.showFilePicker = true
+				m.filePickerError = ""
+				return m, m.filePicker.Init()
+			}
+		case "ctrl+x":
+			// Remove last attached file
+			if len(m.attachedFiles) > 0 {
+				m.RemoveAttachment(len(m.attachedFiles) - 1)
+			}
 		case "left":
 			if m.cursorPos > 0 {
 				m.cursorPos--
@@ -284,8 +415,50 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateFilePicker handles updates when the file picker is shown
+func (m *ChatModel) updateFilePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "ctrl+f":
+			// Close file picker
+			m.showFilePicker = false
+			m.filePickerError = ""
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.filePicker, cmd = m.filePicker.Update(msg)
+
+	// Check if a file was selected
+	if didSelect, path := m.filePicker.DidSelectFile(msg); didSelect {
+		err := m.AttachFile(path)
+		if err != nil {
+			m.filePickerError = err.Error()
+		} else {
+			m.showFilePicker = false
+			m.filePickerError = ""
+		}
+		return m, nil
+	}
+
+	// Check if a disabled file was selected (e.g., directory)
+	if didSelect, path := m.filePicker.DidSelectDisabledFile(msg); didSelect {
+		m.filePickerError = fmt.Sprintf("Cannot attach: %s", path)
+		return m, cmd
+	}
+
+	return m, cmd
+}
+
 // View renders the chat interface
 func (m *ChatModel) View() string {
+	// Show file picker if active
+	if m.showFilePicker {
+		return m.renderFilePicker()
+	}
+
 	var b strings.Builder
 
 	// Tab bar for multiple sessions
@@ -374,6 +547,17 @@ func (m *ChatModel) View() string {
 
 	b.WriteString("\n")
 
+	// Show attached files
+	if len(m.attachedFiles) > 0 {
+		b.WriteString(AttachedFileStyle.Render("📎 Attached files:"))
+		b.WriteString("\n")
+		for i, file := range m.attachedFiles {
+			b.WriteString(AttachedFileStyle.Render(fmt.Sprintf("   %d. %s", i+1, file.Name)))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// Input area
 	inputDisplay := m.input
 	if m.cursorPos <= len(inputDisplay) {
@@ -393,10 +577,30 @@ func (m *ChatModel) View() string {
 	b.WriteString("\n\n")
 
 	// Help
-	helpText := "enter send • ctrl+n/p switch agent • pgup/pgdn scroll • tab switch screen • esc quit"
+	helpText := "enter send • ctrl+f attach file • ctrl+x remove file • ctrl+n/p switch agent • tab switch screen • esc quit"
 	b.WriteString(HelpStyle.Render(helpText))
 
 	return b.String()
+}
+
+// renderFilePicker renders the file picker overlay
+func (m *ChatModel) renderFilePicker() string {
+	var b strings.Builder
+
+	b.WriteString(FilePickerTitleStyle.Render("📁 Select a file to attach"))
+	b.WriteString("\n\n")
+
+	b.WriteString(m.filePicker.View())
+
+	if m.filePickerError != "" {
+		b.WriteString("\n")
+		b.WriteString(LogErrorStyle.Render("⚠️  " + m.filePickerError))
+	}
+
+	b.WriteString("\n\n")
+	b.WriteString(HelpStyle.Render("enter select • esc cancel • ↑/↓ navigate"))
+
+	return FilePickerStyle.Width(m.width - 4).Render(b.String())
 }
 
 // wrapText wraps text to a specified width
