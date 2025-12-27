@@ -160,11 +160,15 @@ func parseResult(msgType MessageType, raw json.RawMessage) (*ChatParsedResult, e
 }
 
 func (c *Client) StartChat(ctx context.Context, agentID string, message string) (chan *ChatParsedResult, chan error) {
+	return c.StartChatWithAttachments(ctx, agentID, message, nil)
+}
+
+func (c *Client) StartChatWithAttachments(ctx context.Context, agentID string, message string, attachments []FileAttachment) (chan *ChatParsedResult, chan error) {
 	id := getID(RequestChat)
 	req := Request{
 		ID:     id,
 		Method: "invokeAgent",
-		Body:   ChatRequest{Agent: agentID, Prompt: message},
+		Body:   ChatRequest{Agent: agentID, Prompt: message, Attachments: attachments},
 	}
 	parsedResultCh := make(chan *ChatParsedResult, 10)
 	errCh, resultCh := c.SendAsyncWithResult(ctx, req)

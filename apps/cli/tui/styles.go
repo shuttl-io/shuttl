@@ -112,6 +112,27 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(primaryColor).
 			Padding(1, 2)
+
+	// File picker styles
+	FilePickerStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(accentColor).
+				Padding(1, 2)
+
+	FilePickerTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(accentColor).
+				MarginBottom(1)
+
+	SelectedFileStyle = lipgloss.NewStyle().
+				Foreground(fgColor).
+				Background(secondaryColor).
+				Bold(true).
+				Padding(0, 1)
+
+	AttachedFileStyle = lipgloss.NewStyle().
+				Foreground(secondaryColor).
+				Italic(true)
 )
 
 func StatusStyle(status string) lipgloss.Style {
