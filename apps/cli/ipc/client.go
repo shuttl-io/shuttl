@@ -250,7 +250,7 @@ func (c *Client) monitorProcess() {
 	c.setState(StateStopped)
 
 	if err != nil && c.ctx.Err() == nil {
-		log.Error("process exited with error: %w", err)
+		log.Error("process exited with error: %v", err)
 		c.errChan <- fmt.Errorf("process exited with error: %w", err)
 	}
 
