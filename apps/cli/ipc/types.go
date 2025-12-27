@@ -2,11 +2,20 @@ package ipc
 
 // Common payload types for IPC communication with Shuttl applications
 
+// FileAttachment represents a file attached to a chat message
+type FileAttachment struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Content  string `json:"content,omitempty"`  // Base64 encoded content
+	MimeType string `json:"mime_type,omitempty"`
+}
+
 // ChatRequest represents a chat message request payload
 type ChatRequest struct {
-	Agent    string  `json:"agent"`
-	ThreadID *string `json:"thread_id,omitempty"`
-	Prompt   string  `json:"prompt"`
+	Agent       string           `json:"agent"`
+	ThreadID    *string          `json:"thread_id,omitempty"`
+	Prompt      string           `json:"prompt"`
+	Attachments []FileAttachment `json:"attachments,omitempty"`
 }
 
 // ChatResponse represents a chat message response payload

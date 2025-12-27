@@ -532,6 +532,3 @@ describe("Type definitions", () => {
     });
 });
 
-
-
-
