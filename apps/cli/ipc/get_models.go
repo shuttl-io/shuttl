@@ -14,8 +14,6 @@ type ModelInfo struct {
 }
 
 func (c *Client) GetModels(ctx context.Context) ([]ModelInfo, error) {
-	c.wg.Add(1)
-	defer c.wg.Done()
 	id := getID("request_models")
 	req := Request{
 		ID:     id,
@@ -36,6 +34,4 @@ func (c *Client) GetModels(ctx context.Context) ([]ModelInfo, error) {
 	log.Info("Received %d models: %v", len(modelListResponse), modelListResponse)
 	return modelListResponse, nil
 }
-
-
 

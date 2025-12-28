@@ -212,6 +212,77 @@ export class StdInServer implements IServer {
                     });
                     break;
 
+                case "listTriggers":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: this.app!.agents.flatMap((agent) => 
+                            agent.triggers.map((trigger) => ({
+                                name: trigger.name,
+                                triggerType: trigger.triggerType,
+                                description: trigger.description,
+                                args: trigger.args,
+                                agentName: agent.name,
+                            }))
+                        ),
+                    });
+                    break;
+
+                case "listModels":
+                    // Get unique models from all agents
+                    const modelsMap = new Map<string, { identifier: string; key: { source: string; name: string } }>();
+                    for (const agent of this.app!.agents) {
+                        const model = agent.model as any;
+                        if (model && model.identifier) {
+                            modelsMap.set(model.identifier, {
+                                identifier: model.identifier,
+                                key: model.key,
+                            });
+                        }
+                    }
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: Array.from(modelsMap.values()),
+                    });
+                    break;
+
+                case "listPrompts":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: this.app!.agents.map((agent) => ({
+                            agentName: agent.name,
+                            systemPrompt: agent.systemPrompt,
+                        })),
+                    });
+                    break;
+
+                case "listTools":
+                    // Get all tools from all toolkits
+                    const allTools: Array<{
+                        name: string;
+                        description: string;
+                        args: Record<string, unknown> | undefined;
+                        toolkitName: string;
+                    }> = [];
+                    for (const toolkit of this.app!.toolkits) {
+                        for (const tool of toolkit.tools) {
+                            allTools.push({
+                                name: tool.name,
+                                description: tool.description,
+                                args: tool.schema?.properties,
+                                toolkitName: toolkit.name,
+                            });
+                        }
+                    }
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: allTools,
+                    });
+                    break;
+
                 case "invokeTool":
                     this.handleInvokeTool(request);
                     break;

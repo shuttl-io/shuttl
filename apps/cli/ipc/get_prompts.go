@@ -14,8 +14,6 @@ type PromptInfo struct {
 }
 
 func (c *Client) GetPrompts(ctx context.Context) ([]PromptInfo, error) {
-	c.wg.Add(1)
-	defer c.wg.Done()
 	id := getID("request_prompts")
 	req := Request{
 		ID:     id,
@@ -36,6 +34,4 @@ func (c *Client) GetPrompts(ctx context.Context) ([]PromptInfo, error) {
 	log.Info("Received %d prompts: %v", len(promptListResponse), promptListResponse)
 	return promptListResponse, nil
 }
-
-
 
