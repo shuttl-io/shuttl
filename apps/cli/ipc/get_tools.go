@@ -16,8 +16,6 @@ type SingleToolInfo struct {
 }
 
 func (c *Client) GetTools(ctx context.Context) ([]SingleToolInfo, error) {
-	c.wg.Add(1)
-	defer c.wg.Done()
 	id := getID("request_tools")
 	req := Request{
 		ID:     id,
@@ -38,5 +36,4 @@ func (c *Client) GetTools(ctx context.Context) ([]SingleToolInfo, error) {
 	log.Info("Received %d tools: %v", len(toolListResponse), toolListResponse)
 	return toolListResponse, nil
 }
-
 
