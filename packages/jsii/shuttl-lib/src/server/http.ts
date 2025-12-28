@@ -218,10 +218,8 @@ export class StdInServer implements IServer {
                         success: true,
                         result: this.app!.agents.flatMap((agent) => 
                             agent.triggers.map((trigger) => ({
-                                name: trigger.name,
+                                name: trigger.triggerType,
                                 triggerType: trigger.triggerType,
-                                description: trigger.description,
-                                args: trigger.args,
                                 agentName: agent.name,
                             }))
                         ),

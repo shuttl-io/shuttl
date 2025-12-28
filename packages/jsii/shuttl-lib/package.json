@@ -73,5 +73,11 @@
     "jsii": "^5.9.14",
     "jsii-pacmak": "^1.120.0",
     "ts-jest": "^29.1.2"
+  },
+  "bundledDependencies": [
+    "zod"
+  ],
+  "dependencies": {
+    "zod": "^4.2.1"
   }
 }

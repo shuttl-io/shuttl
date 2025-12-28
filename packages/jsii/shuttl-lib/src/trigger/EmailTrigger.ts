@@ -1,5 +1,4 @@
-import { BaseTrigger, TriggerOutput } from "./ITrigger";
-import { IOutcome } from "../outcomes/IOutcomes";
+import { ITrigger, TriggerOutput } from "./ITrigger";
 
 export interface EmailTriggerConfig {
     readonly inboxName: string;
@@ -9,15 +8,15 @@ export interface EmailTriggerConfig {
     readonly folder: string;
 }
 
-export class EmailTrigger extends BaseTrigger {
+export class EmailTrigger implements ITrigger {
     public triggerType: string = "email";
-    public outcome?: IOutcome;
+    public triggerConfig: Record<string, unknown> = {};
 
     public constructor(config: EmailTriggerConfig) {
-        super("email", config as any);
+        this.triggerConfig = config as any;
     }
 
-    public parseArgs(_: any): Promise<TriggerOutput> {
+    public activate(_: any): Promise<TriggerOutput> {
         return Promise.resolve({ input: [{
             typeName: "text",
             text: "The email trigger is activated",

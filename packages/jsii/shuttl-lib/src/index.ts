@@ -7,6 +7,6 @@ export * from "./tools/tool";
 export * from "./Server";
 export * from "./app";
 export * from "./server";
-export * from "./Triggers";
+export * from "./trigger";
 export * from "./Outcomes";
 export * from "./models/types";
