@@ -561,7 +561,7 @@ describe("Agent additional tests", () => {
         });
 
         it("should store provided triggers", () => {
-            const trigger = { name: "test", triggerType: "event", description: "Test trigger" };
+            const trigger = { name: "test", triggerType: "event", triggerConfig: {}, activate: jest.fn(), validate: jest.fn() };
 
             const agent = new Agent({
                 name: "TestAgent",
