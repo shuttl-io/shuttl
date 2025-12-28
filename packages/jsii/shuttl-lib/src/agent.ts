@@ -1,4 +1,4 @@
-import { IModelFactory, ModelContent, ModelResponse, ToolCallResponse } from "./models/types";
+import { IModelFactory, ModelContent, ModelResponse, ToolCallResponse, FileAttachment, InputContent } from "./models/types";
 import { Toolkit } from "./tools/toolkit";
 import { ITrigger } from "./Triggers";
 import { IOutcome } from "./Outcomes";
@@ -164,16 +164,59 @@ export class Agent {
         });
     }
 
-    public async invoke(prompt: string | (ModelContent | ToolCallResponse)[], threadId?: string, streamer?: IModelStreamer): Promise<IModel> {
+    public async invoke(
+        prompt: string | (ModelContent | ToolCallResponse)[], 
+        threadId?: string, 
+        streamer?: IModelStreamer,
+        attachments?: FileAttachment[]
+    ): Promise<IModel> {
         if (!streamer) {
             streamer = new AgentStreamer(this, "NOTSET");
         }
+
+        // Build separate input items for text and file attachments
+        const buildInputs = (textPrompt: string): ModelContent[] => {
+            const inputs: ModelContent[] = [];
+            
+            // Add the text message as a separate input
+            if (textPrompt) {
+                inputs.push({
+                    role: "user",
+                    content: textPrompt,
+                });
+            }
+            
+            // Add each file attachment as a separate input
+            if (attachments && attachments.length > 0) {
+                for (const attachment of attachments) {
+                    const fileContent: InputContent = {
+                        typeName: "file",
+                        file: attachment.name,
+                        fileData: attachment,
+                    };
+                    inputs.push({
+                        role: "user",
+                        content: fileContent,
+                    });
+                }
+            }
+            
+            return inputs;
+        };
+
         if (!threadId) {
             const model = await this.model.create({ 
                 systemPrompt: this.systemPrompt,
                 tools: this.tools,
             });
-            await model.invoke([{ content: prompt, role: "user" }], streamer);
+            
+            if (typeof prompt === "string") {
+                const inputs = buildInputs(prompt);
+                await model.invoke(inputs, streamer);
+            } else {
+                await model.invoke(prompt, streamer);
+            }
+            
             // We have to wait for the first invoke bc that is where the threadId is set
             this.modelInstances[model.threadId!] = model;
             return model;
@@ -183,7 +226,8 @@ export class Agent {
             }
             const model = this.modelInstances[threadId];
             if (typeof prompt === "string") {
-                await model.invoke([{ content: prompt, role: "user" }], streamer);
+                const inputs = buildInputs(prompt);
+                await model.invoke(inputs, streamer);
             } else {
                 await model.invoke(prompt, streamer);
             }

@@ -170,6 +170,7 @@ func (c *Client) StartChatWithAttachments(ctx context.Context, agentID string, m
 		Method: "invokeAgent",
 		Body:   ChatRequest{Agent: agentID, Prompt: message, Attachments: attachments},
 	}
+	log.Error("Starting chat with attachments: %v prompt: %s", attachments, message)
 	parsedResultCh := make(chan *ChatParsedResult, 10)
 	errCh, resultCh := c.SendAsyncWithResult(ctx, req)
 	go func() {

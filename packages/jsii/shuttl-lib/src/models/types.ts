@@ -1,10 +1,37 @@
 import { ITool } from "../tools/tool";
 
+/**
+ * Represents a file attachment sent with a chat message
+ */
+export interface FileAttachment {
+    /** The file name */
+    readonly name: string;
+    /** The file path (optional, may not be relevant in all contexts) */
+    readonly path?: string;
+    /** Base64 encoded file content */
+    readonly content: string;
+    /** MIME type of the file */
+    readonly mimeType?: string;
+}
+
+export const isFileAttachment = (obj: any): obj is FileAttachment => {
+    return typeof obj === "object" 
+        && obj !== null 
+        && typeof obj.name === "string"
+        && typeof obj.content === "string";
+}
+
+export const isFileAttachmentArray = (arr: any): arr is FileAttachment[] => {
+    return Array.isArray(arr) && arr.every(isFileAttachment);
+}
+
 export interface InputContent {
     readonly typeName: "text" | "image" | "file";
     readonly text?: string;
     readonly image?: string;
     readonly file?: string;
+    /** For file type, can include base64 content */
+    readonly fileData?: FileAttachment;
 }
 export const isInputContent = (content: any): content is InputContent => {
     return typeof(content) !== "string" 
