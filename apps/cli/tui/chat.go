@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,10 +30,10 @@ type ChatModel struct {
 	ipcClient     *ipc.Client
 
 	// File picker state
-	filePicker       filepicker.Model
-	showFilePicker   bool
-	attachedFiles    []ipc.FileAttachment
-	filePickerError  string
+	filePicker      filepicker.Model
+	showFilePicker  bool
+	attachedFiles   []ipc.FileAttachment
+	filePickerError string
 }
 
 // NewChatModel creates a new chat model
@@ -182,62 +183,77 @@ func (m *ChatModel) RemoveAttachment(index int) {
 }
 
 // getMimeType returns the MIME type based on file extension
+// Uses Go's mime package with fallbacks for programming language files
 func getMimeType(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".txt":
-		return "text/plain"
-	case ".md":
-		return "text/markdown"
-	case ".json":
-		return "application/json"
-	case ".xml":
-		return "application/xml"
-	case ".html", ".htm":
-		return "text/html"
-	case ".css":
-		return "text/css"
-	case ".js":
-		return "application/javascript"
-	case ".ts":
-		return "application/typescript"
-	case ".go":
-		return "text/x-go"
-	case ".py":
-		return "text/x-python"
-	case ".rb":
-		return "text/x-ruby"
-	case ".java":
-		return "text/x-java"
-	case ".c", ".h":
-		return "text/x-c"
-	case ".cpp", ".hpp", ".cc":
-		return "text/x-c++"
-	case ".rs":
-		return "text/x-rust"
-	case ".sh", ".bash":
-		return "application/x-sh"
-	case ".yaml", ".yml":
-		return "application/x-yaml"
-	case ".toml":
-		return "application/toml"
-	case ".csv":
-		return "text/csv"
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	case ".svg":
-		return "image/svg+xml"
-	case ".pdf":
-		return "application/pdf"
-	default:
-		return "application/octet-stream"
+
+	// Custom mappings for programming languages and formats not in Go's mime package
+	customMimeTypes := map[string]string{
+		".ts":    "application/typescript",
+		".tsx":   "application/typescript",
+		".jsx":   "application/javascript",
+		".go":    "text/x-go",
+		".py":    "text/x-python",
+		".rb":    "text/x-ruby",
+		".java":  "text/x-java",
+		".c":     "text/x-c",
+		".h":     "text/x-c",
+		".cpp":   "text/x-c++",
+		".hpp":   "text/x-c++",
+		".cc":    "text/x-c++",
+		".rs":    "text/x-rust",
+		".swift": "text/x-swift",
+		".kt":    "text/x-kotlin",
+		".scala": "text/x-scala",
+		".r":     "text/x-r",
+		".lua":   "text/x-lua",
+		".pl":    "text/x-perl",
+		".php":   "text/x-php",
+		".cs":    "text/x-csharp",
+		".fs":    "text/x-fsharp",
+		".hs":    "text/x-haskell",
+		".elm":   "text/x-elm",
+		".ex":    "text/x-elixir",
+		".exs":   "text/x-elixir",
+		".erl":   "text/x-erlang",
+		".clj":   "text/x-clojure",
+		".ml":    "text/x-ocaml",
+		".vim":   "text/x-vim",
+		".sql":   "application/sql",
+		".md":    "text/markdown",
+		".yaml":  "application/x-yaml",
+		".yml":   "application/x-yaml",
+		".toml":  "application/toml",
+		".ini":   "text/plain",
+		".cfg":   "text/plain",
+		".conf":  "text/plain",
+		".env":   "text/plain",
+		".sh":    "application/x-sh",
+		".bash":  "application/x-sh",
+		".zsh":   "application/x-sh",
+		".fish":  "application/x-sh",
+		".ps1":   "application/x-powershell",
+		".bat":   "application/x-bat",
+		".cmd":   "application/x-bat",
 	}
+
+	// Check custom mappings first
+	if mimeType, ok := customMimeTypes[ext]; ok {
+		return mimeType
+	}
+
+	// Use Go's mime package for standard types
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType != "" {
+		// Strip charset parameter if present (e.g., "text/plain; charset=utf-8" -> "text/plain")
+		if idx := strings.Index(mimeType, ";"); idx != -1 {
+			mimeType = strings.TrimSpace(mimeType[:idx])
+		}
+		return mimeType
+	}
+
+	// Default fallback
+	return "application/octet-stream"
 }
 
 // GetInput returns the current input
@@ -310,7 +326,7 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if session != nil {
 				session.IsWaiting = true
 			}
-			channel, errChan := m.ipcClient.StartChatWithAttachments(context.Background(), m.activeAgentID, m.input, m.attachedFiles)
+			channel, errChan := m.ipcClient.StartChatWithAttachments(context.Background(), m.activeAgentID, msg.Content, m.attachedFiles)
 			m.ClearAttachments()
 			return m, streamChat(channel, errChan, m.activeAgentID)
 		}
