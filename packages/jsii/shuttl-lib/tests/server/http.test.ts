@@ -582,7 +582,8 @@ describe("StdInServer", () => {
             expect(mockAgent.invoke).toHaveBeenCalledWith(
                 "",
                 undefined,
-                expect.anything()
+                expect.anything(),
+                undefined
             );
         });
 
@@ -598,7 +599,28 @@ describe("StdInServer", () => {
             expect(mockAgent.invoke).toHaveBeenCalledWith(
                 "Continue...",
                 "existing-thread",
-                expect.anything()
+                expect.anything(),
+                undefined
+            );
+        });
+
+        it("should pass attachments if provided", async () => {
+            const attachments = [
+                { name: "test.txt", content: "SGVsbG8gV29ybGQ=", mimeType: "text/plain" },
+            ];
+            sendRequest({
+                id: "25a",
+                method: "invokeAgent",
+                body: { agent: "TestAgent", prompt: "Check this file", attachments },
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 10));
+
+            expect(mockAgent.invoke).toHaveBeenCalledWith(
+                "Check this file",
+                undefined,
+                expect.anything(),
+                attachments
             );
         });
 

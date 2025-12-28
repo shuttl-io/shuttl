@@ -140,7 +140,7 @@ func (c *Client) Start() error {
 
 	// Create the command with arguments
 	c.cmd = exec.CommandContext(c.ctx, c.command[0], c.command[1:]...)
-	c.cmd.Env = append(os.Environ())
+	c.cmd.Env = append(os.Environ(), "_SHUTTL_CONTROL=true")
 
 	// Get pipes
 	var err error

@@ -3,6 +3,7 @@ import { IServer } from "../Server";
 import { stdin, stdout } from "process";
 import { createInterface, Interface } from "readline";
 import { AgentStreamer } from "../agent";
+import { FileAttachment, isFileAttachmentArray } from "../models/types";
 
 /**
  * Request message format from the host CLI
@@ -255,6 +256,26 @@ export class StdInServer implements IServer {
         const agentName = params.agent as string | undefined;
         const prompt = (params.prompt as string) ?? "";
         const threadId = params.threadId as string | undefined ?? undefined;
+        const rawAttachments = params.attachments;
+        
+        // Parse and validate attachments
+        let attachments: FileAttachment[] | undefined;
+        if (rawAttachments !== undefined) {
+            if (isFileAttachmentArray(rawAttachments)) {
+                attachments = rawAttachments;
+            } else {
+                this.sendResponse({
+                    id: request.id,
+                    success: false,
+                    errorObj: {
+                        code: "INVALID_PARAMS",
+                        message: "attachments must be an array of FileAttachment objects",
+                    },
+                });
+                return;
+            }
+        }
+
         if (!agentName) {
             this.sendResponse({
                 id: request.id,
@@ -281,7 +302,7 @@ export class StdInServer implements IServer {
         }
         const streamer = new AgentStreamer(agent, request.id);
         try {
-            const model = await agent.invoke(prompt, threadId, streamer);
+            const model = await agent.invoke(prompt, threadId, streamer, attachments);
             this.sendResponse({
                 id: request.id,
                 success: true,
@@ -293,7 +314,15 @@ export class StdInServer implements IServer {
                 success: false,
                 errorObj: {
                     code: "INTERNAL_ERROR",
-                    message: JSON.stringify(e as any),
+                    message: JSON.stringify({
+                        message: (e as Error).message,
+                        stack: (e as Error).stack,
+                        name: (e as Error).name,
+                        type_of_error: typeof e,
+                        error_name: e instanceof Error ? e.name : undefined,
+                        error_object: e,
+                        error_constructor: e instanceof Error ? e.constructor.name : undefined,
+                    }),
                 },
             });
         }
