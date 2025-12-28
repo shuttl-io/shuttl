@@ -1,6 +1,6 @@
 import { IModelFactory, ModelContent, ModelResponse, ToolCallResponse, FileAttachment, InputContent } from "./models/types";
 import { Toolkit } from "./tools/toolkit";
-import { ITrigger } from "./Triggers";
+import { ITrigger } from "./trigger/ITrigger";
 import { IOutcome } from "./Outcomes";
 import { IModelStreamer, ModelResponseData } from "./models/types";
 import { IModel } from "./models/types";
