@@ -6,8 +6,8 @@ package ipc
 type FileAttachment struct {
 	Name     string `json:"name"`
 	Path     string `json:"path"`
-	Content  string `json:"content,omitempty"`  // Base64 encoded content
-	MimeType string `json:"mime_type,omitempty"`
+	Content  string `json:"content,omitempty"` // Base64 encoded content
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // ChatRequest represents a chat message request payload

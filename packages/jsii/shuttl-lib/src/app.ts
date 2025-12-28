@@ -1,6 +1,7 @@
 import { Agent } from "./agent";
 import { Toolkit } from "./tools/toolkit";
-import { IServer } from "./Server";
+import { IServer } from "./Server"
+import { stderr } from "process";
 
 export class App {
     readonly name: string;
@@ -34,7 +35,21 @@ export class App {
     }
 
     public serve(): void {
-        this.server.start();
+        let originalConsoleLog: (...args: any[]) => void | undefined;
+        if (process.env._SHUTTL_CONTROL === "true") {
+            originalConsoleLog = console.log.bind(console);
+            this.monkeyPatchConsoleLog();
+            this.server.start();
+            console.log = originalConsoleLog;
+        } else {
+            this.server.start();
+        }
     }
-   
+
+    //Monkey patch console.log to log to stderr
+    private monkeyPatchConsoleLog() {
+        console.log = (...args: any[]) => {
+            stderr.write(args.join(" ") + "\n");
+        };
+    }
 }
