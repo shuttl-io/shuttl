@@ -8,5 +8,5 @@ export * from "./Server";
 export * from "./app";
 export * from "./server";
 export * from "./trigger";
-export * from "./Outcomes";
+export * from "./outcomes";
 export * from "./models/types";
