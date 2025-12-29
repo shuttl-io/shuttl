@@ -1,4 +1,5 @@
-import { ITrigger, TriggerOutput } from "./ITrigger";
+import { IOutcome } from "../..";
+import { BaseTrigger, TriggerOutput } from "./ITrigger";
 import { z } from "zod";
 
 export interface FileTriggerConfig {
@@ -15,15 +16,16 @@ const FileTriggerSchema = z.object({
     name: z.string(),
 });
 
-export class FileTrigger implements ITrigger {
+export class FileTrigger extends BaseTrigger {
     public triggerType: string = "file";
-    public triggerConfig: Record<string, unknown> = {};
+
+    public outcome?: IOutcome;
 
     public constructor(config: FileTriggerConfig) {
-        this.triggerConfig = config as any;
+        super("file", config as any);
     }
 
-    public activate(args: any): Promise<TriggerOutput> {
+    public parseArgs(args: any): Promise<TriggerOutput> {
         const parsedArgs = FileTriggerSchema.safeParse(args);
         if (!parsedArgs.success) {
             throw new Error(parsedArgs.error.message);
