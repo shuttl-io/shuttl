@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { InputContent } from "../models/types";
-import { ITrigger, TriggerOutput } from "./ITrigger";
-import { assertNever } from "zod/v4/core/util";
+import { BaseTrigger, TriggerOutput } from "./ITrigger";
+import { IOutcome } from "../outcomes/IOutcomes";
+
+function assertNever(value: never): never {
+    throw new Error(`Unexpected value: ${value}`);
+}
 
 export interface IApiAuthenticator {
     authenticate(args: ApiTriggerArgs): Promise<boolean>;
@@ -69,20 +73,21 @@ export interface ApiTriggerArgs {
  * Represents a trigger that can activate an agent via an API call.
  * This API trigger is the default trigger for agents.
  */
-export class ApiTrigger implements ITrigger {
+export class ApiTrigger extends BaseTrigger  {
     public triggerType: string = "api";
     public triggerConfig: Record<string, unknown> = {};
+    public outcome?: IOutcome;
     private authenticator?: IApiAuthenticator;
 
     public constructor(config?: ApiTriggerConfig) {
-        this.triggerConfig = config ?? {
+        super("api", config ?? {
             cors: ["*"],
             authenticator: async (_: ApiTriggerArgs) => true,
-        } as any;
+        } as any);
         this.authenticator = config?.authenticator ?? undefined;
     }
 
-    public activate(rawArgs: any): Promise<TriggerOutput> {
+    public parseArgs(rawArgs: any): Promise<TriggerOutput> {
         const args = ApiTriggerSchema.parse(rawArgs);
         const body = bodySchema.parse(args.body);
         if (!Array.isArray(body)) {

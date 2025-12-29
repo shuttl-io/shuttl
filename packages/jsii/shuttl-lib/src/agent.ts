@@ -1,11 +1,13 @@
 import { IModelFactory, ModelContent, ModelResponse, ToolCallResponse, FileAttachment, InputContent } from "./models/types";
 import { Toolkit } from "./tools/toolkit";
 import { ITrigger } from "./trigger/ITrigger";
-import { IOutcome } from "./Outcomes";
+import { IOutcome } from "./outcomes/IOutcomes";
 import { IModelStreamer, ModelResponseData } from "./models/types";
 import { IModel } from "./models/types";
 import { ITool } from "./tools/tool";
 import { stdout } from "process";
+import { ApiTrigger } from "./trigger/ApiTrigger";
+import { StreamingOutcome } from "./outcomes/StreamingOutcome";
 
 export interface AgentProps {
     readonly name: string;
@@ -153,8 +155,8 @@ export class Agent {
         this.toolkits = props.toolkits;
         this.systemPrompt = props.systemPrompt;
         this.model = props.model;
-        this.triggers = props.triggers || [];
-        this.outcomes = props.outcomes || [];
+        this.triggers = props.triggers || [new ApiTrigger()];
+        this.outcomes = props.outcomes || [new StreamingOutcome()];
         this.tools = props.tools || [];
         this.tools = this.tools.concat(this.toolkits.flatMap(
             toolkit => toolkit.tools

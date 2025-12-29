@@ -538,7 +538,7 @@ describe("Agent additional tests", () => {
     });
 
     describe("triggers and outcomes", () => {
-        it("should initialize with empty triggers by default", () => {
+        it("should initialize with default ApiTrigger when no triggers provided", () => {
             const agent = new Agent({
                 name: "TestAgent",
                 toolkits: [],
@@ -546,10 +546,11 @@ describe("Agent additional tests", () => {
                 model: new MockModelFactory(),
             });
 
-            expect(agent.triggers).toEqual([]);
+            expect(agent.triggers).toHaveLength(1);
+            expect(agent.triggers[0].triggerType).toBe("api");
         });
 
-        it("should initialize with empty outcomes by default", () => {
+        it("should initialize with default StreamingOutcome when no outcomes provided", () => {
             const agent = new Agent({
                 name: "TestAgent",
                 toolkits: [],
@@ -557,11 +558,20 @@ describe("Agent additional tests", () => {
                 model: new MockModelFactory(),
             });
 
-            expect(agent.outcomes).toEqual([]);
+            expect(agent.outcomes).toHaveLength(1);
+            expect(agent.outcomes[0]).toBeDefined();
         });
 
         it("should store provided triggers", () => {
-            const trigger = { name: "test", triggerType: "event", triggerConfig: {}, activate: jest.fn(), validate: jest.fn() };
+            const trigger = { 
+                name: "test", 
+                triggerType: "event", 
+                triggerConfig: {}, 
+                activate: jest.fn(), 
+                validate: jest.fn(),
+                outcome: undefined,
+                bindOutcome: jest.fn().mockReturnThis(),
+            };
 
             const agent = new Agent({
                 name: "TestAgent",
@@ -576,7 +586,7 @@ describe("Agent additional tests", () => {
         });
 
         it("should store provided outcomes", () => {
-            const outcome = { send: jest.fn() };
+            const outcome = { send: jest.fn(), bindToRequest: jest.fn() };
 
             const agent = new Agent({
                 name: "TestAgent",

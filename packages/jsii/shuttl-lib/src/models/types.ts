@@ -125,3 +125,12 @@ export interface IModelFactoryProps {
 export interface IModelFactory {
     create(props: IModelFactoryProps): Promise<IModel>;
 }
+
+export interface IModelResponseStreamValue {
+    value: ModelResponse | undefined;
+    done: boolean;
+}
+
+export interface IModelResponseStream {
+    next(): Promise<IModelResponseStreamValue>;
+}
