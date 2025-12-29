@@ -1,5 +1,6 @@
-import { ITrigger, TriggerOutput } from "./ITrigger";
+import { BaseTrigger, TriggerOutput } from "./ITrigger";
 import { InputContent } from "../models/types";
+import { IOutcome } from "../outcomes/IOutcomes";
 
 interface RateTriggerConfig {
     /**
@@ -13,7 +14,6 @@ interface RateTriggerConfig {
     timezone?: string;
     ms_rate?: number;
 
-
     /**
      * The function to call when the trigger is activated.
      * @default null
@@ -25,17 +25,20 @@ export interface IRateTriggerOnTrigger {
     onTrigger(): Promise<InputContent[]>;
 }
 
-export class Rate implements ITrigger {
+export class Rate extends BaseTrigger {
     public triggerType: string = "rate";
     public triggerConfig: Record<string, unknown> = {};
+
+    public outcome?: IOutcome;
+
     private onTrigger: (() => Promise<InputContent[]>) | null;
 
     private constructor(config: RateTriggerConfig) {
-        this.triggerConfig = config as any;
+        super("rate", config as any);
         this.onTrigger = config.onTrigger?.onTrigger ?? null;
     }
 
-    public async activate(_: any): Promise<TriggerOutput> {
+    public async parseArgs(_: any): Promise<TriggerOutput> {
         if (this.onTrigger) {
             const input = await this.onTrigger();
             return { input };
