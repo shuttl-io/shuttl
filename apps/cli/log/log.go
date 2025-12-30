@@ -18,7 +18,35 @@ type Logger struct {
 	entries []Entry
 	mu      sync.RWMutex
 	maxSize int
+	mode    LogMode
+	level   LogLevel
 }
+
+type LogLevel string
+
+var logLevels = map[LogLevel]int{
+	LogLevelIPC:   0,
+	LogLevelDebug: 1,
+	LogLevelInfo:  2,
+	LogLevelWarn:  3,
+	LogLevelError: 4,
+}
+
+const (
+	LogLevelDebug LogLevel = "DEBUG"
+	LogLevelInfo  LogLevel = "INFO"
+	LogLevelWarn  LogLevel = "WARN"
+	LogLevelError LogLevel = "ERROR"
+	LogLevelIPC   LogLevel = "IPC"
+)
+
+type LogMode int
+
+const (
+	LogToConsole LogMode = iota
+	LogToFile
+	LogToEntries
+)
 
 var (
 	// Default is the global debug logger
@@ -35,11 +63,32 @@ func New(maxSize int) *Logger {
 	return &Logger{
 		entries: make([]Entry, 0, maxSize),
 		maxSize: maxSize,
+		mode:    LogToConsole,
+		level:   LogLevelInfo,
 	}
+}
+
+func (l *Logger) SetMode(mode LogMode) {
+	l.mode = mode
+}
+
+func (l *Logger) SetLevel(level LogLevel) {
+	l.level = level
 }
 
 // Log adds a log entry with the given level
 func (l *Logger) Log(level, format string, args ...interface{}) {
+	if l.mode == LogToConsole {
+		if logLevels[LogLevel(level)] < logLevels[l.level] {
+			return
+		}
+		fmt.Printf("[%s] [%-5s] %s\n",
+			time.Now().Format("15:04:05.000"),
+			level,
+			fmt.Sprintf(format, args...),
+		)
+		return
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

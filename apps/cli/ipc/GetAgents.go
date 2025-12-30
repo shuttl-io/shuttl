@@ -109,6 +109,8 @@ func FetchAvailableModels(ctx context.Context, organizationID int, apiURL string
 }
 
 func (c *Client) GetAgents(ctx context.Context) ([]AgentInfo, error) {
+	c.wg.Add(1)
+	defer c.wg.Done()
 	id := getID(RequestListAgents)
 	req := Request{
 		ID:     id,

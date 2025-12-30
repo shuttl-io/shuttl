@@ -20,6 +20,8 @@ type ToolInfo struct {
 }
 
 func (c *Client) GetToolkits(ctx context.Context) ([]ToolkitInfo, error) {
+	c.wg.Add(1)
+	defer c.wg.Done()
 	id := getID("request_toolkits")
 	req := Request{
 		ID:     id,

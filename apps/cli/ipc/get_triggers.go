@@ -17,6 +17,8 @@ type TriggerInfo struct {
 }
 
 func (c *Client) GetTriggers(ctx context.Context) ([]TriggerInfo, error) {
+	c.wg.Add(1)
+	defer c.wg.Done()
 	id := getID("request_triggers")
 	req := Request{
 		ID:     id,
@@ -37,4 +39,3 @@ func (c *Client) GetTriggers(ctx context.Context) ([]TriggerInfo, error) {
 	log.Info("Received %d triggers: %v", len(triggerListResponse), triggerListResponse)
 	return triggerListResponse, nil
 }
-
