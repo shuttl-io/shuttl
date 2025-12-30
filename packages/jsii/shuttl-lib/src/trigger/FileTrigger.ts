@@ -1,4 +1,4 @@
-import { IOutcome } from "../..";
+import { IOutcome } from "../outcomes/IOutcomes";
 import { BaseTrigger, TriggerOutput } from "./ITrigger";
 import { z } from "zod";
 
