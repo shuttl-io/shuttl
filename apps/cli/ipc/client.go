@@ -97,7 +97,7 @@ type Client struct {
 
 	// Context for cancellation
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	// Wait group for goroutines
 	wg sync.WaitGroup
@@ -106,11 +106,15 @@ type Client struct {
 	sendMu            sync.Mutex
 	specialChannels   map[string]*SpecialChannel
 	specialChannelsMu sync.RWMutex
+
+	// Stderr buffer for capturing subprocess stderr output
+	stderrBuffer   []string
+	stderrBufferMu sync.Mutex
 }
 
 // NewClient creates a new IPC client for the given command and arguments
 func NewClient(command []string) *Client {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 
 	return &Client{
 		command:         command,
@@ -120,6 +124,7 @@ func NewClient(command []string) *Client {
 		ctx:             ctx,
 		cancel:          cancel,
 		specialChannels: make(map[string]*SpecialChannel),
+		stderrBuffer:    make([]string, 0),
 	}
 }
 
@@ -196,6 +201,14 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 		default:
 			line := scanner.Text()
 			log.DebugWithPrefix("IPC", "Received line from %s: %s", source, line)
+
+			// Collect stderr lines into the buffer for later display if process exits early
+			if source == "stderr" {
+				c.stderrBufferMu.Lock()
+				c.stderrBuffer = append(c.stderrBuffer, line)
+				c.stderrBufferMu.Unlock()
+			}
+
 			output := OutputLine{
 				Source:    source,
 				Content:   line,
@@ -204,11 +217,9 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 
 			// Try to parse as JSON message
 			var msg Message
-			if err := json.Unmarshal([]byte(line), &msg); err == nil {
+			err := json.Unmarshal([]byte(line), &msg)
+			if err == nil {
 				output.Message = &msg
-			}
-			if !msg.Success {
-				log.Error("IPC error: %+v", msg.ErrorObj)
 			}
 
 			c.specialChannelsMu.RLock()
@@ -222,19 +233,29 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 				outputChan = channel.outputChan
 				errChan = channel.errChan
 			}
+			if err != nil {
+				errChan <- err
+			}
 
-			select {
-			case outputChan <- output:
-			default:
-				// Channel full, drop oldest
+			if source == "stdout" {
 				select {
-				case <-outputChan:
+				case outputChan <- output:
 				default:
-				}
-				outputChan <- output
+					// Channel full, drop oldest
+					select {
+					case <-outputChan:
+					default:
+					}
+					outputChan <- output
 
-				if err := scanner.Err(); err != nil && c.ctx.Err() == nil {
-					errChan <- fmt.Errorf("%s scanner error: %w", source, err)
+					if err := scanner.Err(); err != nil && c.ctx.Err() == nil {
+						errChan <- fmt.Errorf("%s scanner error: %w", source, err)
+					}
+				}
+			} else {
+				select {
+				case errChan <- fmt.Errorf("%s scanner error: %s", source, line):
+				default:
 				}
 			}
 		}
@@ -245,19 +266,40 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 // monitorProcess monitors the subprocess and handles cleanup
 func (c *Client) monitorProcess() {
 	defer c.wg.Done()
+	defer func() {
+		c.wg.Wait()
+		log.Info("Closing output and error channels")
+		close(c.outputChan)
+		close(c.errChan)
+		for key := range c.specialChannels {
+			c.CloseSpecialChannel(key)
+		}
+	}()
 
 	err := c.cmd.Wait()
 	c.setState(StateStopped)
 
 	if err != nil && c.ctx.Err() == nil {
-		log.Error("process exited with error: %v", err)
-		c.errChan <- fmt.Errorf("process exited with error: %w", err)
+		// Output the error and stderr to the user
+		log.Error("Subprocess exited unexpectedly: %v", err)
+
+		// Print the stderr output if we collected any
+		c.stderrBufferMu.Lock()
+		if len(c.stderrBuffer) > 0 {
+			log.Error("Subprocess stderr output:\n")
+			log.Error("----------------------------------------\n")
+			for _, line := range c.stderrBuffer {
+				log.Error("%s\n", line)
+			}
+			log.Error("----------------------------------------\n")
+		}
+		c.stderrBufferMu.Unlock()
+		c.cancel(fmt.Errorf("subprocess exited unexpectedly: %w", err))
+		return
 	}
 
 	// Close the output channel after process exits
-	log.Info("Closing output and error channels")
-	close(c.outputChan)
-	close(c.errChan)
+
 }
 
 // Send sends a message to the Shuttl application (blocking)
@@ -485,7 +527,7 @@ func (c *Client) Kill() error {
 	c.stateMu.Unlock()
 
 	// Cancel context to stop all goroutines
-	c.cancel()
+	c.cancel(nil)
 
 	// Kill the process
 	if c.cmd != nil && c.cmd.Process != nil {
