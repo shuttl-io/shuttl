@@ -107,7 +107,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(client.Context(), 30*time.Second)
 	defer cancel()
 
 	// Fetch all data via IPC
@@ -192,4 +192,3 @@ func runBuild(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("✅ Manifest written to: %s\n", absPath)
 }
-

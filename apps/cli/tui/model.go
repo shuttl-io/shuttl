@@ -632,6 +632,8 @@ func (m Model) renderHeader() string {
 // If client is nil, the TUI will run in demo mode
 // The IPC client will be stopped when the TUI exits
 func Run(client *ipc.Client) error {
+	log.Default.SetMode(log.LogToEntries)
+	defer log.Default.SetMode(log.LogToConsole)
 	log.Info("Starting TUI")
 	if client != nil {
 		log.IPC("IPC client provided, command: %v", client.Command())

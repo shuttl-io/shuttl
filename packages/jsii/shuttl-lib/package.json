@@ -63,7 +63,8 @@
     },
     "tsc": {
       "outDir": "dist",
-      "root": "src"
+      "root": "src",
+      "excludeTypescript": ["dist/**/*.d.ts"]
     }
   },
   "devDependencies": {
