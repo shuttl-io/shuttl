@@ -2,8 +2,9 @@ import { App } from "../app";
 import { IServer } from "../Server";
 import { stdin, stdout } from "process";
 import { createInterface, Interface } from "readline";
-import { AgentStreamer } from "../agent";
-import { FileAttachment, isFileAttachmentArray } from "../models/types";
+import { Agent, AgentStreamer, IAgentStreamerWriter } from "../agent";
+import { FileAttachment, InputContent, isFileAttachmentArray, IModelResponseStream, ModelResponse, ModelResponseStreamValue } from "../models/types";
+import { ITriggerInvoker, SerializedHTTPRequest } from "../trigger/ITrigger";
 
 /**
  * Request message format from the host CLI
@@ -218,7 +219,7 @@ export class StdInServer implements IServer {
                         success: true,
                         result: this.app!.agents.flatMap((agent) => 
                             agent.triggers.map((trigger) => ({
-                                name: trigger.triggerType,
+                                name: trigger.name,
                                 triggerType: trigger.triggerType,
                                 agentName: agent.name,
                             }))
@@ -296,6 +297,10 @@ export class StdInServer implements IServer {
 
                 case "invokeAgent":
                     this.handleInvokeAgent(request);
+                    break;
+
+                case "invokeTrigger":
+                    this.handleInvokeTrigger(request);
                     break;
 
                 default:
@@ -492,6 +497,159 @@ export class StdInServer implements IServer {
     }
 
     /**
+     * Handle trigger invocation request from the serve command
+     */
+    private async handleInvokeTrigger(request: IPCRequest): Promise<void> {
+        const params = request.body ?? {};
+        const agentName = params.agentName as string | undefined;
+        const triggerName = params.triggerName as string | undefined;
+        const triggerType = params.triggerType as string | undefined;
+        const threadId = params.threadId as string | undefined;
+        const httpRequest = params.httpRequest as SerializedHTTPRequest | undefined;
+
+        // Validate required parameters
+        if (!agentName) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeTrigger requires 'agentName' param",
+                },
+            });
+            return;
+        }
+
+        if (!triggerName && !triggerType) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeTrigger requires 'triggerName' or 'triggerType' param",
+                },
+            });
+            return;
+        }
+
+        // Find the agent
+        const agent = this.app!.agents.find((a) => a.name === agentName);
+        if (!agent) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Agent not found: ${agentName}`,
+                },
+            });
+            return;
+        }
+
+        // Find the trigger by name first, then by type
+        let trigger = agent.triggers.find((t) => t.name === triggerName);
+        if (!trigger && triggerType) {
+            trigger = agent.triggers.find((t) => t.triggerType === triggerType);
+        }
+
+        if (!trigger) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Trigger not found: ${triggerName || triggerType} on agent ${agentName}`,
+                },
+            });
+            return;
+        }
+
+        // Validate the trigger arguments if validation is available
+        if (trigger.validate) {
+            try {
+                const validationResult = await trigger.validate(httpRequest);
+                if (validationResult.error) {
+                    this.sendResponse({
+                        id: request.id,
+                        success: false,
+                        errorObj: {
+                            code: "VALIDATION_ERROR",
+                            message: validationResult.error as string,
+                        },
+                    });
+                    return;
+                }
+            } catch (e) {
+                this.sendResponse({
+                    id: request.id,
+                    success: false,
+                    errorObj: {
+                        code: "VALIDATION_ERROR",
+                        message: (e as Error).message,
+                    },
+                });
+                return;
+            }
+        }
+
+        // Create the trigger invoker with optional thread ID
+        const invoker = new ServerTriggerInvoker(agent, request.id, threadId);
+
+        try {
+            // Activate the trigger with the HTTP request
+            const triggerFunc = async () => {
+                await trigger.activate(httpRequest, invoker);
+
+                this.sendResponse({
+                    id: request.id,
+                    success: true,
+                    result: {
+                        agentName: agentName,
+                        triggerName: trigger.name,
+                        triggerType: trigger.triggerType,
+                        threadId: invoker.getThreadId(),
+                        status: "completed",
+                        output: invoker.getOutput(),
+                    },
+                });
+            }
+            triggerFunc();
+
+            // Send success response with the result
+            this.sendResponse({
+                id: request.id,
+                success: true,
+                result: {
+                    agentName: agentName,
+                    triggerName: trigger.name,
+                    triggerType: trigger.triggerType,
+                    threadId: invoker.getThreadId(),
+                    status: "acknowledged",
+                    output: invoker.getOutput(),
+                },
+            });
+        } catch (e) {
+            
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "TRIGGER_ERROR",
+                    message: JSON.stringify({
+                        message: (e as Error).message,
+                        stack: (e as Error).stack,
+                        name: (e as Error).name,
+                        type_of_error: typeof e,
+                        error_name: e instanceof Error ? e.name : undefined,
+                        error_object: e,
+                        error_constructor: e instanceof Error ? e.constructor.name : undefined,
+                    }),
+                },
+            });
+        }
+    }
+
+    /**
      * Send a JSON response to STDOUT
      */
     private sendResponse(response: IPCResponse): void {
@@ -499,4 +657,99 @@ export class StdInServer implements IServer {
         stdout.write(json + "\n");
     }
 
+} 
+
+interface TriggerResponse extends ModelResponse {
+    id: string;
+    type: string;
+    success: boolean;
+}
+
+class TriggerStreamerWriter implements IAgentStreamerWriter, IModelResponseStream {
+    private buffer: ModelResponse[] = [];
+    private done: boolean = false;
+
+    write(value: string): void {
+        this.writeObject(JSON.parse(value));
+    }
+
+    writeObject(value: TriggerResponse): void {
+        if (!this.done) {
+            this.buffer.push(value);
+        }
+        if (value.type === "overall.completed") {
+            this.done = true;
+        }
+    }
+
+    async next(): Promise<ModelResponseStreamValue> {
+        if (this.buffer.length > 0) {
+            return { done: false, value: this.buffer.shift() };
+        }
+        if (this.done && this.buffer.length === 0) {
+            return { done: true, value: undefined };
+        } else {
+            return new Promise((resolve) => {
+                setImmediate((() => {
+                    resolve(this.next());
+                }).bind(this));
+            });
+        }
+    }
+}   
+
+/**
+ * Trigger invoker that invokes the agent via the server
+ */
+class ServerTriggerInvoker implements ITriggerInvoker {
+    private output: unknown = null;
+    private currentThreadId: string | undefined;
+
+    constructor(
+        private readonly agent: Agent,
+        private readonly requestId: string,
+        private readonly threadId?: string,
+    ) {
+        this.currentThreadId = threadId;
+    }
+
+    public async invoke(prompt: InputContent[]): Promise<IModelResponseStream> {
+        // Create a streamer for this invocation
+        const writer = new TriggerStreamerWriter();
+        const streamer = new AgentStreamer(this.agent, this.requestId, writer);
+        
+        // Build the model content from the input
+        const modelContent = prompt.map((input) => ({
+            role: "user" as const,
+            content: input,
+        }));
+
+        // Use the agent's invoke method which handles thread management
+        const startStream = async () => {
+            const model = await this.agent.invoke(modelContent, this.threadId, streamer);
+            
+            // Store the thread ID for the response
+            this.currentThreadId = model.threadId;
+
+        }
+
+        startStream();
+
+        // Return a completed response stream since the actual streaming is handled by AgentStreamer
+        return writer;
+    }
+
+    public async defaultOutcome(_stream: IModelResponseStream): Promise<void> {
+        // The default outcome just stores the stream result
+        // The actual streaming has already been handled by AgentStreamer
+        this.output = { completed: true };
+    }
+
+    public getOutput(): unknown {
+        return this.output;
+    }
+
+    public getThreadId(): string | undefined {
+        return this.currentThreadId;
+    }
 }

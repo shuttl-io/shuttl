@@ -132,6 +132,7 @@ export class OpenAI implements IModel {
             data: {
                 typeName: "response.requested",
                 requested: body,
+                threadId: this.threadId,
             },
         });
         try {
@@ -162,6 +163,13 @@ export class OpenAI implements IModel {
                     }
                     const { done, value } = result;
                     if (done) {
+                        streamer.recieve(this, {
+                            eventName: "overall.completed",
+                            data: {
+                                typeName: "overall.completed",
+                            },
+                            threadId: this.threadId,
+                        });
                         break;
                     }
                     
@@ -190,9 +198,17 @@ export class OpenAI implements IModel {
                         }
                     }
                 }
+               
             } else {
                 const data = await response.json();
                 streamer.recieve(this, data as any);
+                streamer.recieve(this, {
+                    eventName: "overall.completed",
+                    data: {
+                        typeName: "overall.completed",
+                    },
+                    threadId: this.threadId,
+                });
             }
 
         }
