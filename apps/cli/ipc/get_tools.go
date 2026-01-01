@@ -38,3 +38,4 @@ func (c *Client) GetTools(ctx context.Context) ([]SingleToolInfo, error) {
 	log.Info("Received %d tools: %v", len(toolListResponse), toolListResponse)
 	return toolListResponse, nil
 }
+

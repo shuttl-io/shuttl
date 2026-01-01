@@ -571,6 +571,7 @@ describe("Agent additional tests", () => {
                 validate: jest.fn(),
                 outcome: undefined,
                 bindOutcome: jest.fn().mockReturnThis(),
+                withName: jest.fn().mockReturnThis(),
             };
 
             const agent = new Agent({
