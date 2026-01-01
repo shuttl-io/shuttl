@@ -36,3 +36,4 @@ func (c *Client) GetPrompts(ctx context.Context) ([]PromptInfo, error) {
 	log.Info("Received %d prompts: %v", len(promptListResponse), promptListResponse)
 	return promptListResponse, nil
 }
+

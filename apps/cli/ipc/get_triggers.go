@@ -39,3 +39,4 @@ func (c *Client) GetTriggers(ctx context.Context) ([]TriggerInfo, error) {
 	log.Info("Received %d triggers: %v", len(triggerListResponse), triggerListResponse)
 	return triggerListResponse, nil
 }
+

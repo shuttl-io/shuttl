@@ -36,3 +36,4 @@ func (c *Client) GetModels(ctx context.Context) ([]ModelInfo, error) {
 	log.Info("Received %d models: %v", len(modelListResponse), modelListResponse)
 	return modelListResponse, nil
 }
+

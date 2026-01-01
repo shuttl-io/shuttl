@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -42,8 +41,7 @@ If no manifest file is found, an error will be thrown.
 Examples:
   shuttl serve
   shuttl serve --port 8443
-  shuttl serve --manifest ./custom-manifest.json
-  shuttl serve --agent my-agent --trigger my-trigger --event '{"name": "my-event"}' --thread_id my-thread-id`,
+  shuttl serve --manifest ./custom-manifest.json`,
 	Run: runServe,
 }
 
@@ -52,11 +50,6 @@ func init() {
 	serveCmd.Flags().StringP("manifest", "m", "shuttl-manifest.json", "Path to the manifest file")
 	serveCmd.Flags().String("cert", "", "Path to TLS certificate file (optional, generates self-signed if not provided)")
 	serveCmd.Flags().String("key", "", "Path to TLS private key file (optional, generates self-signed if not provided)")
-	serveCmd.Flags().StringP("agent", "a", "", "Agent to serve (optional, serves all agents if not provided)")
-	serveCmd.Flags().StringP("trigger", "t", "", "Trigger to serve (optional, serves all triggers if not provided)")
-	serveCmd.Flags().StringP("event", "e", "", "The optional event JSON to pass to the agent and the trigger to get a response back")
-	serveCmd.Flags().StringP("event_file", "f", "", "The optional event file to pass to the agent and the trigger to get a response back")
-	serveCmd.Flags().StringP("thread_id", "i", "", "the thread id to use for the conversation")
 	serveCmd.Flags().Bool("insecure", false, "Use HTTP/2 cleartext (h2c) without TLS (not recommended for production)")
 	rootCmd.AddCommand(serveCmd)
 }
@@ -78,31 +71,13 @@ type triggerServer struct {
 }
 
 func runServe(cmd *cobra.Command, args []string) {
+	log.Default.SetMode(log.LogToConsole)
+	log.Default.SetLevel(log.LogLevelDebug)
 	port, _ := cmd.Flags().GetInt("port")
 	manifestPath, _ := cmd.Flags().GetString("manifest")
 	certPath, _ := cmd.Flags().GetString("cert")
 	keyPath, _ := cmd.Flags().GetString("key")
 	insecure, _ := cmd.Flags().GetBool("insecure")
-
-	agent, _ := cmd.Flags().GetString("agent")
-	trigger, _ := cmd.Flags().GetString("trigger")
-	event, _ := cmd.Flags().GetString("event")
-	eventFile, _ := cmd.Flags().GetString("event_file")
-	threadID, _ := cmd.Flags().GetString("thread_id")
-	if event != "" && eventFile != "" {
-		log.Error("both event and event_file cannot be provided")
-		os.Exit(1)
-	}
-
-	if (event != "" || eventFile != "") && (agent == "" || trigger == "") {
-		log.Error("You must provide the agent and the trigger when providing the event or event_file")
-		os.Exit(1)
-	}
-
-	if trigger != "" && agent == "" {
-		log.Error("you must provide the agent when providing the trigger")
-		os.Exit(1)
-	}
 
 	// Check if manifest file exists
 	absManifestPath, err := filepath.Abs(manifestPath)
@@ -111,42 +86,42 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		log.Error("manifest file not found: %s", absManifestPath)
-		log.Error("Run 'shuttl build' first to generate the manifest file.")
+		fmt.Fprintf(os.Stderr, "❌ Error: manifest file not found: %s\n", absManifestPath)
+		fmt.Fprintf(os.Stderr, "   Run 'shuttl build' first to generate the manifest file.\n")
 		os.Exit(1)
 	}
 
 	// Read and parse manifest file
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
-		log.Error("Error reading manifest file: %v", err)
+		fmt.Fprintf(os.Stderr, "❌ Error reading manifest file: %v\n", err)
 		os.Exit(1)
 	}
 
 	var manifest Manifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		log.Error("Error parsing manifest file: %v", err)
+		fmt.Fprintf(os.Stderr, "❌ Error parsing manifest file: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Validate that the manifest has an app command
 	if manifest.App == "" {
-		log.Error("manifest file does not contain an 'app' command")
-		log.Error("Rebuild the manifest with 'shuttl build'")
+		fmt.Fprintf(os.Stderr, "❌ Error: manifest file does not contain an 'app' command\n")
+		fmt.Fprintf(os.Stderr, "   Rebuild the manifest with 'shuttl build'\n")
 		os.Exit(1)
 	}
 
 	// Start the IPC client
-	log.Info("🔧 Starting app: %s", manifest.App)
+	fmt.Printf("🔧 Starting app: %s\n", manifest.App)
 	command := ipc.ParseCommand(manifest.App)
 	if len(command) == 0 {
-		log.Error("empty app command in manifest")
+		fmt.Fprintf(os.Stderr, "❌ Error: empty app command in manifest\n")
 		os.Exit(1)
 	}
 
 	client := ipc.NewClient(command)
 	if err := client.Start(); err != nil {
-		log.Error("Error starting app: %v", err)
+		fmt.Fprintf(os.Stderr, "❌ Error starting app: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -157,142 +132,6 @@ func runServe(cmd *cobra.Command, args []string) {
 	ts := &triggerServer{
 		client:   client,
 		manifest: manifest,
-	}
-
-	// Filter triggers based on agent and trigger flags
-	if agent != "" {
-		var filtered []ipc.TriggerInfo
-		for _, t := range manifest.Triggers {
-			if t.AgentName == agent {
-				// If trigger is also specified, only include that specific trigger
-				if trigger != "" {
-					if t.Name == trigger {
-						filtered = append(filtered, t)
-					}
-				} else {
-					// Include all triggers for the agent
-					filtered = append(filtered, t)
-				}
-			}
-		}
-		if len(filtered) == 0 {
-			if trigger != "" {
-				log.Error("trigger %s for agent %s not found in manifest", trigger, agent)
-			} else {
-				log.Error("no triggers found for agent %s in manifest", agent)
-			}
-			os.Exit(1)
-		}
-		manifest.Triggers = filtered
-		ts.manifest.Triggers = filtered
-	}
-
-	// If event or event_file is provided, invoke the trigger directly and exit
-	if event != "" || eventFile != "" {
-		// Read event data
-		var eventData []byte
-		var err error
-		if eventFile != "" {
-			eventData, err = os.ReadFile(eventFile)
-			if err != nil {
-				log.Error("Error reading event file: %v", err)
-				client.Close()
-				os.Exit(1)
-			}
-		} else {
-			eventData = []byte(event)
-		}
-
-		// Validate JSON
-		if !json.Valid(eventData) {
-			log.Error("event data is not valid JSON")
-			client.Close()
-			os.Exit(1)
-		}
-
-		// Find the trigger info
-		var triggerInfo *ipc.TriggerInfo
-		for _, t := range manifest.Triggers {
-			if t.AgentName == agent && t.Name == trigger {
-				triggerInfo = &t
-				break
-			}
-		}
-		if triggerInfo == nil {
-			log.Error("trigger %s for agent %s not found", trigger, agent)
-			client.Close()
-			os.Exit(1)
-		}
-
-		log.Info("🚀 Invoking trigger %s/%s...", agent, trigger)
-
-		// Create the trigger request
-		triggerReq := ipc.TriggerRequest{
-			AgentName:   agent,
-			TriggerName: trigger,
-			TriggerType: triggerInfo.TriggerType,
-			ThreadID:    threadID,
-			HTTPRequest: &ipc.SerializedHTTPRequest{
-				Method:      "POST",
-				Path:        fmt.Sprintf("/%s/%s", agent, trigger),
-				Headers:     make(map[string][]string),
-				Query:       make(map[string][]string),
-				Body:        json.RawMessage(eventData),
-				ContentType: "application/json",
-				RemoteAddr:  "cli",
-				Host:        "localhost",
-				Proto:       "CLI/1.0",
-				Timestamp:   time.Now(),
-			},
-		}
-
-		// Create context with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		// Invoke the trigger
-		response, err := client.InvokeTrigger(ctx, triggerReq)
-		if err != nil {
-			log.Error("Error invoking trigger: %v", err)
-			client.Close()
-			os.Exit(1)
-		}
-
-		// Print the result
-		if response.Success {
-			log.Info("✅ Trigger completed successfully")
-			if response.ThreadID != "" {
-				log.Info("   Thread ID: %s", response.ThreadID)
-			}
-			if response.Result != nil {
-				// Pretty print the result
-				var prettyResult bytes.Buffer
-				if err := json.Indent(&prettyResult, response.Result, "", "  "); err == nil {
-					log.Info("   Result:\n%s", prettyResult.String())
-				} else {
-					log.Info("   Result: %s", string(response.Result))
-				}
-			}
-			if len(response.Events) > 0 {
-				log.Info("   Events:")
-				for i, evt := range response.Events {
-					var prettyEvt bytes.Buffer
-					if err := json.Indent(&prettyEvt, evt, "     ", "  "); err == nil {
-						log.Info("   [%d] %s", i+1, prettyEvt.String())
-					} else {
-						log.Info("   [%d] %s", i+1, string(evt))
-					}
-				}
-			}
-		} else {
-			log.Error("Trigger failed: %s", response.Error)
-			client.Close()
-			os.Exit(1)
-		}
-
-		// Clean up and exit
-		client.Close()
-		os.Exit(0)
 	}
 
 	// Build agent-to-triggers mapping
@@ -347,31 +186,31 @@ func runServe(cmd *cobra.Command, args []string) {
 	})
 
 	// Print startup information
-	log.Info("")
-	log.Info("🚀 Shuttl Trigger Server")
-	log.Info("========================")
-	log.Info("📄 Manifest: %s", absManifestPath)
-	log.Info("📦 Version: %s", manifest.Version)
-	log.Info("🕐 Built: %s", manifest.BuildTime)
-	log.Info("🔌 App PID: %d", client.ProcessID())
-	log.Info("")
+	fmt.Println()
+	fmt.Println("🚀 Shuttl Trigger Server")
+	fmt.Println("========================")
+	fmt.Printf("📄 Manifest: %s\n", absManifestPath)
+	fmt.Printf("📦 Version: %s\n", manifest.Version)
+	fmt.Printf("🕐 Built: %s\n", manifest.BuildTime)
+	fmt.Printf("🔌 App PID: %d\n", client.ProcessID())
+	fmt.Println()
 
 	if len(ts.endpoints) == 0 {
-		log.Warn("⚠️  No triggers found in manifest")
+		fmt.Println("⚠️  No triggers found in manifest")
 	} else {
-		log.Info("📡 Registered endpoints:")
+		fmt.Println("📡 Registered endpoints:")
 		for _, ep := range ts.endpoints {
 			desc := ep.Description
 			if desc == "" {
 				desc = fmt.Sprintf("(%s trigger)", ep.TriggerType)
 			}
-			log.Info("   POST %s - %s", ep.Path, desc)
+			fmt.Printf("   POST %s - %s\n", ep.Path, desc)
 		}
 	}
-	log.Info("")
-	log.Info("   GET  /health - Health check endpoint")
-	log.Info("   GET  / - List all endpoints")
-	log.Info("")
+	fmt.Println()
+	fmt.Printf("   GET  /health - Health check endpoint\n")
+	fmt.Printf("   GET  / - List all endpoints\n")
+	fmt.Println()
 
 	// Create server
 	server := &http.Server{
@@ -388,7 +227,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	go func() {
 		<-shutdownChan
-		log.Info("\n\n🛑 Shutting down server...")
+		fmt.Println("\n\n🛑 Shutting down server...")
 
 		// Create a context with timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -396,32 +235,32 @@ func runServe(cmd *cobra.Command, args []string) {
 
 		// Stop the HTTP server
 		if err := server.Shutdown(ctx); err != nil {
-			log.Error("Error shutting down HTTP server: %v", err)
+			fmt.Fprintf(os.Stderr, "   Error shutting down HTTP server: %v\n", err)
 		}
 
 		// Stop the IPC client
-		log.Info("   Stopping app...")
+		fmt.Println("   Stopping app...")
 		if err := client.Close(); err != nil {
-			log.Error("Error stopping app: %v", err)
+			fmt.Fprintf(os.Stderr, "   Error stopping app: %v\n", err)
 		}
 
-		log.Info("✅ Server stopped")
+		fmt.Println("✅ Server stopped")
 		os.Exit(0)
 	}()
 
 	if insecure {
 		// HTTP/2 cleartext (h2c) mode
-		log.Warn("⚠️  Starting HTTP/2 server in insecure mode (h2c)")
-		log.Info("🌐 Listening on http://localhost:%d", port)
-		log.Info("")
-		log.Info("Press Ctrl+C to stop the server")
+		fmt.Printf("⚠️  Starting HTTP/2 server in insecure mode (h2c)\n")
+		fmt.Printf("🌐 Listening on http://localhost:%d\n", port)
+		fmt.Println()
+		fmt.Println("Press Ctrl+C to stop the server")
 
 		// Configure HTTP/2 server
 		h2s := &http2.Server{}
 		server.Handler = h2c(mux, h2s)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("Server error: %v", err)
+			fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
 			client.Close()
 			os.Exit(1)
 		}
@@ -433,7 +272,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			// Use provided certificates
 			cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 			if err != nil {
-				log.Error("Error loading TLS certificates: %v", err)
+				fmt.Fprintf(os.Stderr, "❌ Error loading TLS certificates: %v\n", err)
 				client.Close()
 				os.Exit(1)
 			}
@@ -441,12 +280,12 @@ func runServe(cmd *cobra.Command, args []string) {
 				Certificates: []tls.Certificate{cert},
 				NextProtos:   []string{"h2", "http/1.1"},
 			}
-			log.Info("🔒 Using provided TLS certificates")
+			fmt.Printf("🔒 Using provided TLS certificates\n")
 		} else {
 			// Generate self-signed certificate
 			cert, err := generateSelfSignedCert()
 			if err != nil {
-				log.Error("Error generating self-signed certificate: %v", err)
+				fmt.Fprintf(os.Stderr, "❌ Error generating self-signed certificate: %v\n", err)
 				client.Close()
 				os.Exit(1)
 			}
@@ -454,25 +293,25 @@ func runServe(cmd *cobra.Command, args []string) {
 				Certificates: []tls.Certificate{cert},
 				NextProtos:   []string{"h2", "http/1.1"},
 			}
-			log.Info("🔒 Using auto-generated self-signed TLS certificate")
+			fmt.Printf("🔒 Using auto-generated self-signed TLS certificate\n")
 		}
 
 		server.TLSConfig = tlsConfig
 
-		log.Info("🌐 Listening on https://localhost:%d", port)
-		log.Info("")
-		log.Info("Press Ctrl+C to stop the server")
+		fmt.Printf("🌐 Listening on https://localhost:%d\n", port)
+		fmt.Println()
+		fmt.Println("Press Ctrl+C to stop the server")
 
 		// Start the server with TLS
 		listener, err := tls.Listen("tcp", server.Addr, tlsConfig)
 		if err != nil {
-			log.Error("Error starting TLS listener: %v", err)
+			fmt.Fprintf(os.Stderr, "❌ Error starting TLS listener: %v\n", err)
 			client.Close()
 			os.Exit(1)
 		}
 
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Error("Server error: %v", err)
+			fmt.Fprintf(os.Stderr, "❌ Server error: %v\n", err)
 			client.Close()
 			os.Exit(1)
 		}
@@ -517,9 +356,9 @@ func (ts *triggerServer) createTriggerHandler(endpoint TriggerEndpoint) http.Han
 			streamStr = ", streaming"
 		}
 		if threadID != "" {
-			log.Info("POST %s - Trigger invoked (thread: %s%s)", endpoint.Path, threadID, streamStr)
+			fmt.Printf("[%s] POST %s - Trigger invoked (thread: %s%s)\n", time.Now().Format("15:04:05"), endpoint.Path, threadID, streamStr)
 		} else {
-			log.Info("POST %s - Trigger invoked (new thread%s)", endpoint.Path, streamStr)
+			fmt.Printf("[%s] POST %s - Trigger invoked (new thread%s)\n", time.Now().Format("15:04:05"), endpoint.Path, streamStr)
 		}
 
 		// Serialize the HTTP request to JSON
@@ -564,7 +403,7 @@ func shouldStream(r *http.Request) bool {
 func (ts *triggerServer) handleNonStreamingTrigger(w http.ResponseWriter, ctx context.Context, triggerReq ipc.TriggerRequest) {
 	response, err := ts.client.InvokeTrigger(ctx, triggerReq)
 	if err != nil {
-		log.Error("   Error invoking trigger: %v", err)
+		fmt.Printf("   ❌ Error invoking trigger: %v\n", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -578,10 +417,10 @@ func (ts *triggerServer) handleNonStreamingTrigger(w http.ResponseWriter, ctx co
 	// Return the response from the trigger
 	w.Header().Set("Content-Type", "application/json")
 	if response.Success {
-		log.Info("   ✅ Trigger completed successfully")
+		fmt.Printf("   ✅ Trigger completed successfully\n")
 		w.WriteHeader(http.StatusOK)
 	} else {
-		log.Warn("   ⚠️ Trigger returned error: %s", response.Error)
+		fmt.Printf("   ⚠️ Trigger returned error: %s\n", response.Error)
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	json.NewEncoder(w).Encode(response)
@@ -619,12 +458,12 @@ func (ts *triggerServer) handleStreamingTrigger(w http.ResponseWriter, r *http.R
 		select {
 		case <-r.Context().Done():
 			// Client disconnected
-			log.Warn("   ⚠️ Client disconnected")
+			fmt.Printf("   ⚠️ Client disconnected\n")
 			return
 
 		case err := <-errCh:
 			if err != nil {
-				log.Error("   Error in trigger stream: %v", err)
+				fmt.Printf("   ❌ Error in trigger stream: %v\n", err)
 				ts.sendSSEEvent(w, flusher, "error", map[string]interface{}{
 					"error":     err.Error(),
 					"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -634,7 +473,7 @@ func (ts *triggerServer) handleStreamingTrigger(w http.ResponseWriter, r *http.R
 		case event, ok := <-eventCh:
 			if !ok {
 				// Channel closed, stream complete
-				log.Info("   ✅ Trigger stream completed")
+				fmt.Printf("   ✅ Trigger stream completed\n")
 				return
 			}
 
@@ -660,7 +499,7 @@ func (ts *triggerServer) handleStreamingTrigger(w http.ResponseWriter, r *http.R
 			ts.sendSSEEvent(w, flusher, event.Type, eventData)
 
 			if event.Completed {
-				log.Info("   ✅ Trigger completed")
+				fmt.Printf("   ✅ Trigger completed\n")
 				return
 			}
 		}

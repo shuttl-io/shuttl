@@ -19,15 +19,27 @@ export interface AgentProps {
     readonly tools?: ITool[];
 }
 
+export interface IAgentStreamerWriter {
+    write(value: string): void;
+    writeObject?(value: any): void;
+}
+
 export class AgentStreamer implements IModelStreamer {
     private resultPromise: Promise<{ callId: string, result: unknown }>[] = [];
     private jobs: number = 0;
     private calls: Record<string, Promise<{ callId: string, result: unknown }>> = {};
+    private readonly writer: IAgentStreamerWriter
 
     public constructor(
         private readonly agent: Agent,
         private readonly controlID: string,
+        writer?: IAgentStreamerWriter
     ) {
+        if (writer) {
+            this.writer = writer;
+        } else {
+            this.writer = stdout;
+        }
     }
 
     private write(type: string, data: any, success: boolean): void {
@@ -42,13 +54,22 @@ export class AgentStreamer implements IModelStreamer {
                 },
             };
         }
-        const json = JSON.stringify({
-            id: this.controlID,
-            type: type,
-            success,
-            ...body,
-        });
-        stdout.write(json + "\n");
+        if (this.writer.writeObject) {
+            this.writer.writeObject({
+                id: this.controlID,
+                type: type,
+                success,
+                ...body,
+            });
+        } else {
+            const json = JSON.stringify({
+                id: this.controlID,
+                type: type,
+                success,
+                ...body,
+            });
+            this.writer.write(json + "\n");
+        }
     }
 
     public async recieve(model: IModel, content: ModelResponse): Promise<void> {
@@ -133,6 +154,17 @@ export class AgentStreamer implements IModelStreamer {
                 }
                 case "response.requested": {
                     this.write("response.requested", data, true);
+                    break;
+                }
+                case "overall.completed": {
+                    this.write("overall.completed", {
+                        ...data,
+                        controlID: this.controlID,
+                    }, true);
+                    break;
+                }
+                case "response.completed": {
+                    this.write("response.completed", data, true);
                     break;
                 }
             }

@@ -1,3 +1,3 @@
 {
-    "app": "npx ts-node --prefer-ts-exts ./apps/shuttl_agents/main.ts"
+    "app": "node --inspect --require ts-node/register ./apps/shuttl_agents/main.ts"
 }
