@@ -1,12 +1,12 @@
 import { IOutcome, SlackOutcome } from "../src/outcomes/IOutcomes";
 import { StreamingOutcome } from "../src/outcomes/StreamingOutcome";
-import { IModelResponseStream, IModelResponseStreamValue } from "../src/models/types";
+import { IModelResponseStream, ModelResponseStreamValue } from "../src/models/types";
 
 // Helper to create a properly typed mock streamer
 function createMockStreamer(): IModelResponseStream {
     let called = false;
     return {
-        async next(): Promise<IModelResponseStreamValue> {
+        async next(): Promise<ModelResponseStreamValue> {
             if (called) {
                 return { value: undefined, done: true };
             }

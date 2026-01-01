@@ -91,11 +91,12 @@ export interface Usage {
     readonly totalTokens: number;
 }
 export interface ModelResponseData {
-    readonly typeName: "response.requested" | "tool_call" | "output_text" | "output_text_delta" | "response.completed" | "output_text.part.done";
+    readonly typeName: "response.requested" | "tool_call" | "output_text" | "output_text_delta" | "response.completed" | "output_text.part.done" | "overall.completed"; 
     readonly toolCall?: ModelToolOutput;
     readonly outputText?: ModelTextOutput;
     readonly outputTextDelta?: ModelDeltaOutput;
     readonly requested?: any
+    readonly threadId?: string;
 }
 
 export interface ModelResponse {
@@ -103,6 +104,7 @@ export interface ModelResponse {
     readonly data: ModelResponseData[] | ModelResponseData;
     readonly usage?: Usage;
     readonly modelInstance?: IModel;
+    readonly threadId?: string;
 }
 
 export type ToolCallResponse = Record<string, unknown>;
@@ -126,11 +128,11 @@ export interface IModelFactory {
     create(props: IModelFactoryProps): Promise<IModel>;
 }
 
-export interface IModelResponseStreamValue {
-    value: ModelResponse | undefined;
-    done: boolean;
+export interface ModelResponseStreamValue {
+    readonly value: ModelResponse | undefined;
+    readonly done: boolean;
 }
 
 export interface IModelResponseStream {
-    next(): Promise<IModelResponseStreamValue>;
+    next(): Promise<ModelResponseStreamValue>;
 }
