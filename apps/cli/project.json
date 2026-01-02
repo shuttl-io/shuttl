@@ -25,9 +25,11 @@
           "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-darwin-arm64.zip",
           "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-amd64.zip",
           "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-arm64.zip"
-        ],
-        "cwd": "{projectRoot}"
-      }
+        ]
+      },
+      "dependsOn": [
+        "@shuttl-io/core:build:all"
+      ]
     },
     "build": {
       "executor": "nx:run-commands",
