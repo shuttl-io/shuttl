@@ -39,6 +39,7 @@ class SyncResult:
     errors: list[str]
     warnings: list[str]
     commit_mappings: dict[str, str]  # source_hash -> dest_hash
+    tags_synced: int = 0
 
 
 class RepoSyncer:
@@ -241,6 +242,16 @@ class RepoSyncer:
 
         # State is now tracked via synced_from: in commit messages, no state file needed
 
+        # Sync tags for successfully synced commits
+        if not dry_run and self.config.sync_tags and result.commit_mappings:
+            tags_synced = self._sync_tags(
+                source_repo=source_repo,
+                dest_repo=dest_repo,
+                commit_mappings=result.commit_mappings,
+                dry_run=dry_run,
+            )
+            result.tags_synced = tags_synced
+
         # Push if configured
         if not dry_run and self.config.auto_push and result.commits_synced > 0:
             console.print("\n[bold]Pushing changes...[/bold]")
@@ -256,6 +267,15 @@ class RepoSyncer:
                         self.config.private_branch,
                     )
                 console.print("[green]Push successful.[/green]")
+
+                # Push tags if any were synced
+                if result.tags_synced > 0:
+                    console.print("[dim]Pushing tags...[/dim]")
+                    dest_repo.push_tags(
+                        self.config.public_remote if direction == "private-to-public"
+                        else self.config.private_remote
+                    )
+                    console.print(f"[green]Pushed {result.tags_synced} tags.[/green]")
             except Exception as e:
                 result.warnings.append(f"Push failed: {e}")
                 console.print(f"[yellow]Push failed: {e}[/yellow]")
@@ -376,6 +396,57 @@ class RepoSyncer:
                 return None
             raise
 
+    def _sync_tags(
+        self,
+        source_repo: GitRepository,
+        dest_repo: GitRepository,
+        commit_mappings: dict[str, str],
+        dry_run: bool,
+    ) -> int:
+        """
+        Sync tags from source to destination repo.
+
+        Only syncs tags that point to commits in commit_mappings.
+
+        Args:
+            source_repo: Source repository
+            dest_repo: Destination repository
+            commit_mappings: Mapping of source commit hashes to destination commit hashes
+            dry_run: If True, don't actually create tags
+
+        Returns:
+            Number of tags synced
+        """
+        tags_synced = 0
+
+        console.print("\n[bold]Syncing tags...[/bold]")
+
+        for source_hash, dest_hash in commit_mappings.items():
+            # Get tags pointing to this source commit
+            source_tags = source_repo.get_tags_for_commit(source_hash)
+
+            for tag_name in source_tags:
+                # Check if tag already exists in destination
+                if dest_repo.tag_exists(tag_name):
+                    console.print(f"  [dim]Tag {tag_name} already exists, skipping[/dim]")
+                    continue
+
+                if dry_run:
+                    console.print(f"  [dim]Would create tag {tag_name} at {dest_hash[:8]}[/dim]")
+                    tags_synced += 1
+                else:
+                    try:
+                        dest_repo.create_tag(tag_name, dest_hash)
+                        console.print(f"  [green]✓[/green] Created tag {tag_name} → {dest_hash[:8]}")
+                        tags_synced += 1
+                    except Exception as e:
+                        console.print(f"  [yellow]⚠ Failed to create tag {tag_name}: {e}[/yellow]")
+
+        if tags_synced == 0:
+            console.print("  [dim]No tags to sync[/dim]")
+
+        return tags_synced
+
     def _print_summary(self, result: SyncResult, dry_run: bool) -> None:
         """Print sync summary."""
         console.print("\n[bold]Sync Summary:[/bold]")
@@ -387,6 +458,9 @@ class RepoSyncer:
             console.print(f"  [red]✗ {prefix}Sync failed[/red]")
 
         console.print(f"  Files changed: {result.files_changed}")
+
+        if result.tags_synced > 0:
+            console.print(f"  Tags synced: {result.tags_synced}")
 
         if result.errors:
             console.print(f"  [red]Errors: {len(result.errors)}[/red]")
@@ -488,8 +562,19 @@ class RepoSyncer:
                 new_hash = dest_repo.commit(commit_message)
                 result.commits_synced = 1
                 result.files_changed = len(all_copied_files)
+                result.commit_mappings[source_commit] = new_hash
                 console.print(f"\n  [green]✓ Created commit {new_hash[:8]}[/green]")
                 console.print(f"  [dim]synced_from: {source_commit[:8]}[/dim]")
+
+                # Sync tags if configured
+                if self.config.sync_tags:
+                    tags_synced = self._sync_tags(
+                        source_repo=source_repo,
+                        dest_repo=dest_repo,
+                        commit_mappings=result.commit_mappings,
+                        dry_run=dry_run,
+                    )
+                    result.tags_synced = tags_synced
 
         self._print_summary(result, dry_run)
         return result

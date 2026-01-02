@@ -381,6 +381,79 @@ class GitRepository:
         except GitCommandError:
             return False
 
+    def get_tags_for_commit(self, commit_hash: str) -> list[str]:
+        """Get all tags pointing to a specific commit."""
+        tags = []
+        try:
+            # Get tags that point directly to this commit
+            output = self.repo.git.tag("--points-at", commit_hash)
+            if output:
+                tags = [t.strip() for t in output.splitlines() if t.strip()]
+        except GitCommandError:
+            pass
+        return tags
+
+    def get_all_tags(self) -> dict[str, str]:
+        """Get all tags and their commit hashes."""
+        tags = {}
+        try:
+            for tag in self.repo.tags:
+                tags[tag.name] = tag.commit.hexsha
+        except Exception:
+            pass
+        return tags
+
+    def create_tag(
+        self,
+        tag_name: str,
+        commit_hash: str,
+        message: str | None = None,
+        force: bool = False,
+    ) -> bool:
+        """
+        Create a tag pointing to a specific commit.
+
+        Args:
+            tag_name: Name of the tag
+            commit_hash: Commit hash to tag
+            message: Optional tag message (creates annotated tag if provided)
+            force: If True, overwrite existing tag
+
+        Returns:
+            True if tag was created, False otherwise
+        """
+        try:
+            cmd_args = []
+            if force:
+                cmd_args.append("-f")
+            if message:
+                cmd_args.extend(["-a", "-m", message])
+            cmd_args.extend([tag_name, commit_hash])
+
+            self.repo.git.tag(*cmd_args)
+            return True
+        except GitCommandError as e:
+            # Tag might already exist
+            if "already exists" in str(e):
+                return False
+            raise
+
+    def tag_exists(self, tag_name: str) -> bool:
+        """Check if a tag exists."""
+        try:
+            self.repo.git.rev_parse(f"refs/tags/{tag_name}")
+            return True
+        except GitCommandError:
+            return False
+
+    def push_tags(self, remote: str = "origin") -> None:
+        """Push all tags to remote."""
+        self.repo.git.push(remote, "--tags")
+
+    def push_tag(self, tag_name: str, remote: str = "origin") -> None:
+        """Push a specific tag to remote."""
+        self.repo.git.push(remote, f"refs/tags/{tag_name}")
+
 
 def should_include_file(
     file_path: str,
