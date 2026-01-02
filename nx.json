@@ -1,5 +1,12 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "release": {
+    "changelog": {
+      "projectChangelogs": {
+        "createRelease": "github"
+      }
+    }
+  },
   "plugins": [
     {
       "plugin": "@nx/jest/plugin",
