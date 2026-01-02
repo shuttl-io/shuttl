@@ -120,4 +120,8 @@ export abstract class BaseTrigger implements ITrigger {
         this.name = name;
         return this;
     }
+
+    validate(_: any): Promise<Record<string, unknown>> {
+        return Promise.resolve({});
+    }
 }

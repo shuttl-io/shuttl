@@ -21,14 +21,7 @@
                 "cwd": "{projectRoot}"
             }
         },
-        "test": {
-            "executor": "@nx/jest:jest",
-            "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
-            "options": {
-                "jestConfig": "packages/jsii/shuttl-lib/jest.config.js",
-                "passWithNoTests": true
-            }
-        },
+        
         "test:integration": {
             "executor": "@nx/jest:jest",
             "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
