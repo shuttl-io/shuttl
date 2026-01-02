@@ -1,10 +1,4 @@
 packages:
-  - landing-pages/**
-  - cdkk8s/**
-  - landing-pages-infra/**
-  - payload-declaritive/**
-  - cdk-nextjs/**
-  - external/**
   - apps/**
-  - packages/node/**
   - packages/jsii/**
+  - tooling/**

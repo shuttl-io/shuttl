@@ -4,7 +4,6 @@
   "projectType": "application",
   "sourceRoot": "apps/cli",
   "implicitDependencies": [
-    "dashboard/web",
     "@shuttl-io/core"
   ],
   "targets": {
@@ -92,7 +91,6 @@
         "command": "{projectRoot}/dist/shuttl"
       },
       "dependsOn": [
-        "dashboard/web:dev",
         "build"
       ]
     },
