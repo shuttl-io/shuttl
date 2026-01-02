@@ -20,7 +20,7 @@
   "repository": {
     "url": "https://github.com/shuttl-io/shuttl_ai.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "stability": "stable",
   "nx": {
     "targets": {
