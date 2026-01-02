@@ -60,7 +60,7 @@
         "module": "shuttl.core"
       },
       "go": {
-        "moduleName": "github.com/shuttl-io/shuttl",
+        "moduleName": "github.com/shuttl-io/shuttl-core-go",
         "packageName": "core"
       },
       "dotnet": {
