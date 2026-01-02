@@ -1,0 +1,7 @@
+go 1.24.5
+
+use (
+	./apps/api/web
+	./apps/cli
+	./packages/golang/core_datamodel
+)
