@@ -5,11 +5,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "test": "jest",
     "test:integration": "jest --config integration-tests/jest.config.js --runInBand",
     "build": "jsii",
     "build:watch": "jsii --watch",
-    "package": "jsii-pacmak"
+    "package": "jsii-pacmak",
+    "tsc": "tsc"
   },
   "keywords": [],
   "author": {
@@ -25,6 +25,9 @@
   "nx": {
     "targets": {
       "package": {
+        "options": {
+          "cwd": "{projectRoot}"
+        },
         "dependsOn": [
           "build"
         ]
@@ -43,27 +46,31 @@
   },
   "jsii": {
     "versionFormat": "full",
-    "outdir": "dist",
+    "outdir": "dist-jsii",
     "targets": {
       "java": {
-        "package": "io.shuttl.module.shuttl",
+        "package": "io.shuttl.module.core",
         "maven": {
           "groupId": "io.shuttl.module",
-          "artifactId": "shuttl"
+          "artifactId": "core"
         }
       },
       "python": {
-        "distName": "shuttl.models",
-        "module": "shuttl.model"
+        "distName": "shuttl.core",
+        "module": "shuttl.core"
+      },
+      "go": {
+        "moduleName": "github.com/shuttl-io/shuttl",
+        "packageName": "core"
       },
       "dotnet": {
-        "namespace": "shuttl.models",
-        "packageId": "shuttl.models"
+        "namespace": "shuttl.core",
+        "packageId": "shuttl.core"
       }
     },
     "tsc": {
-      "outDir": "dist",
-      "root": "src",
+      "outDir": "dist/",
+      "rootDir": "src/",
       "excludeTypescript": [
         "dist/**/*.d.ts"
       ]

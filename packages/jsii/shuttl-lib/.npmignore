@@ -9,7 +9,10 @@ tsconfig.json
 !*.d.ts
 
 # Exclude jsii outdir
-dist
+dist-jsii
+coverage
+integration-tests
+project.json
 
 # Include .jsii and .jsii.gz
 !.jsii
