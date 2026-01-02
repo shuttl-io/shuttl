@@ -28,12 +28,6 @@ files:
 - private_path: .gitignore
   public_path: null
   enabled: true
-- private_path: go.work
-  public_path: null
-  enabled: true
-- private_path: go.work.sum
-  public_path: null
-  enabled: true
 - private_path: jest.config.ts
   public_path: null
   enabled: true
@@ -65,12 +59,6 @@ files:
   public_path: null
   enabled: true
 - private_path: package.json
-  public_path: null
-  enabled: true
-- private_path: pnpm-lock.yaml
-  public_path: null
-  enabled: true
-- private_path: pnpm-workspace.yaml
   public_path: null
   enabled: true
 - private_path: tsconfig.base.json
