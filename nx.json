@@ -1,6 +1,13 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "release": {
+    "projects": [
+      "apps/cli",
+      "packages/jsii/shuttl-lib"
+    ],
+    "version": {
+      "currentVersionResolver": "git-tag"
+    },
     "changelog": {
       "projectChangelogs": {
         "createRelease": "github"
