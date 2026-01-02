@@ -193,6 +193,10 @@ class SyncConfig(BaseModel):
         default=False,
         description="Squash multiple commits into one when syncing",
     )
+    sync_tags: bool = Field(
+        default=True,
+        description="Sync tags that point to synced commits",
+    )
 
     @classmethod
     def from_yaml(cls, path: Path) -> "SyncConfig":

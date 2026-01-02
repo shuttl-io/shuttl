@@ -101,7 +101,7 @@ global_exclude_patterns:
 # JSII
 - .jsii
 commit_prefix: '[sync]'
-state_file: .git_syncer_state.json
 dry_run: false
 auto_push: false
 squash_commits: false
+sync_tags: true
