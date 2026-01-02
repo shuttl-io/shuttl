@@ -12,7 +12,7 @@ from typing import Literal
 import click
 from rich.console import Console
 
-from .config import ProjectMapping, SyncConfig, create_default_config
+from .config import FileMapping, ProjectMapping, SyncConfig, create_default_config
 from .syncer import RepoSyncer
 
 console = Console()
@@ -78,7 +78,14 @@ def cli():
     "-j",
     "projects",
     multiple=True,
-    help="Project path to sync (can be specified multiple times)",
+    help="Project (directory) path to sync (can be specified multiple times)",
+)
+@click.option(
+    "--file",
+    "-f",
+    "files",
+    multiple=True,
+    help="Individual file path to sync (can be specified multiple times)",
 )
 @click.option(
     "--output",
@@ -92,6 +99,7 @@ def init(
     public_repo_url: str,
     public_repo_clone_path: Path | None,
     projects: tuple[str, ...],
+    files: tuple[str, ...],
     output: Path,
 ):
     """Initialize a new sync configuration file."""
@@ -100,13 +108,18 @@ def init(
         public_repo_url=public_repo_url,
         public_repo_clone_path=public_repo_clone_path,
         projects=list(projects) if projects else None,
+        files=list(files) if files else None,
     )
 
     config.to_yaml(output)
     console.print(f"[green]Created configuration file: {output}[/green]")
     console.print(f"  Public repo URL: {public_repo_url}")
     console.print(f"  Clone path: {config.public_repo_path}")
-    console.print("\nEdit this file to add projects and customize settings.")
+    if projects:
+        console.print(f"  Projects: {len(projects)}")
+    if files:
+        console.print(f"  Files: {len(files)}")
+    console.print("\nEdit this file to add more projects/files and customize settings.")
 
 
 @cli.command()
@@ -312,6 +325,101 @@ def add_project(
     default=Path("git_syncer.yaml"),
     help="Path to the sync configuration file",
 )
+@click.argument("file_paths", nargs=-1, required=True)
+@click.option(
+    "--public-path",
+    help="Path in the public repo (only applies when adding a single file)",
+)
+def add_file(
+    config_path: Path,
+    file_paths: tuple[str, ...],
+    public_path: str | None,
+):
+    """Add one or more individual files to the sync configuration.
+
+    Examples:
+        git-syncer add-file README.md
+        git-syncer add-file README.md LICENSE CONTRIBUTING.md
+        git-syncer add-file README.md --public-path docs/README.md
+    """
+    if public_path and len(file_paths) > 1:
+        console.print("[yellow]Warning: --public-path only applies to single file additions[/yellow]")
+        public_path = None
+
+    try:
+        config = SyncConfig.from_yaml(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Config file not found: {config_path}[/red]")
+        raise SystemExit(1)
+
+    existing_files = {f.private_path for f in config.files}
+    added_count = 0
+    skipped_count = 0
+
+    for file_path in file_paths:
+        if file_path in existing_files:
+            console.print(f"[yellow]Skipping (already exists): {file_path}[/yellow]")
+            skipped_count += 1
+            continue
+
+        # Add new file
+        new_file = FileMapping(
+            private_path=file_path,
+            public_path=public_path if len(file_paths) == 1 else None,
+        )
+        config.files.append(new_file)
+        existing_files.add(file_path)
+        console.print(f"[green]Added file: {file_path}[/green]")
+        if public_path and len(file_paths) == 1:
+            console.print(f"  Public path: {public_path}")
+        added_count += 1
+
+    if added_count > 0:
+        config.to_yaml(config_path)
+        console.print(f"\n[green]Added {added_count} file(s)[/green]")
+    if skipped_count > 0:
+        console.print(f"[yellow]Skipped {skipped_count} existing file(s)[/yellow]")
+
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("git_syncer.yaml"),
+    help="Path to the sync configuration file",
+)
+@click.argument("file_path")
+def remove_file(config_path: Path, file_path: str):
+    """Remove an individual file from the sync configuration."""
+    try:
+        config = SyncConfig.from_yaml(config_path)
+    except FileNotFoundError:
+        console.print(f"[red]Config file not found: {config_path}[/red]")
+        raise SystemExit(1)
+
+    # Find and remove file
+    original_len = len(config.files)
+    config.files = [f for f in config.files if f.private_path != file_path]
+
+    if len(config.files) == original_len:
+        console.print(f"[yellow]File not found: {file_path}[/yellow]")
+        raise SystemExit(1)
+
+    config.to_yaml(config_path)
+    console.print(f"[green]Removed file: {file_path}[/green]")
+
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("git_syncer.yaml"),
+    help="Path to the sync configuration file",
+)
 @click.argument("project_path")
 def remove_project(config_path: Path, project_path: str):
     """Remove a project from the sync configuration."""
@@ -333,7 +441,7 @@ def remove_project(config_path: Path, project_path: str):
     console.print(f"[green]Removed project: {project_path}[/green]")
 
 
-@cli.command()
+@cli.command(name="list")
 @click.option(
     "--config",
     "-c",
@@ -342,50 +450,54 @@ def remove_project(config_path: Path, project_path: str):
     default=Path("git_syncer.yaml"),
     help="Path to the sync configuration file",
 )
-def list_projects(config_path: Path):
-    """List all configured projects."""
+def list_items(config_path: Path):
+    """List all configured projects and files."""
     try:
         config = SyncConfig.from_yaml(config_path)
     except FileNotFoundError:
         console.print(f"[red]Config file not found: {config_path}[/red]")
         raise SystemExit(1)
 
-    if not config.projects:
-        console.print("[yellow]No projects configured.[/yellow]")
+    if not config.projects and not config.files:
+        console.print("[yellow]No projects or files configured.[/yellow]")
         return
 
-    console.print("\n[bold]Configured Projects:[/bold]\n")
-    for project in config.projects:
-        status = "[green]enabled[/green]" if project.enabled else "[red]disabled[/red]"
-        console.print(f"  • {project.private_path} ({status})")
-        if project.public_path:
-            console.print(f"      Public path: {project.public_path}")
-        if project.exclude_patterns:
-            console.print(f"      Excludes: {', '.join(project.exclude_patterns)}")
+    if config.projects:
+        console.print("\n[bold]Configured Projects (directories):[/bold]\n")
+        for project in config.projects:
+            status = "[green]enabled[/green]" if project.enabled else "[red]disabled[/red]"
+            console.print(f"  • {project.private_path} ({status})")
+            if project.public_path:
+                console.print(f"      Public path: {project.public_path}")
+            if project.exclude_patterns:
+                console.print(f"      Excludes: {', '.join(project.exclude_patterns)}")
+
+    if config.files:
+        console.print("\n[bold]Configured Files:[/bold]\n")
+        for file in config.files:
+            status = "[green]enabled[/green]" if file.enabled else "[red]disabled[/red]"
+            console.print(f"  • {file.private_path} ({status})")
+            if file.public_path:
+                console.print(f"      Public path: {file.public_path}")
 
 
 @cli.command()
-@click.option(
-    "--config",
-    "-c",
-    "config_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=Path("git_syncer.yaml"),
-    help="Path to the sync configuration file",
-)
-def reset_state(config_path: Path):
-    """Reset the sync state (useful for re-syncing from scratch)."""
-    try:
-        config = SyncConfig.from_yaml(config_path)
-    except FileNotFoundError:
-        console.print(f"[red]Config file not found: {config_path}[/red]")
-        raise SystemExit(1)
+def reset_state():
+    """Information about resetting sync state.
 
-    if config.state_file.exists():
-        config.state_file.unlink()
-        console.print("[green]Sync state has been reset.[/green]")
-    else:
-        console.print("[yellow]No state file found.[/yellow]")
+    Sync state is now tracked via 'synced_from:' lines in commit messages
+    in the destination repository. To re-sync from scratch:
+
+    1. Use --full flag: git-syncer sync --direction private-to-public --full
+
+    This will sync all current files regardless of commit history.
+    """
+    console.print("\n[bold]Sync State Information[/bold]\n")
+    console.print("Sync state is now tracked via [cyan]synced_from:[/cyan] lines in commit messages.")
+    console.print("The syncer reads the last synced commit from the destination repo's git history.\n")
+    console.print("[bold]To re-sync from scratch:[/bold]")
+    console.print("  git-syncer sync --direction private-to-public --full\n")
+    console.print("This will sync all current files regardless of previous sync history.")
 
 
 if __name__ == "__main__":

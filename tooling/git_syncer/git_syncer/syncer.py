@@ -7,7 +7,6 @@ repository to another while maintaining commit history and messages.
 
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -15,7 +14,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from .config import ProjectMapping, SyncConfig, SyncState
+from .config import SyncConfig
 from .git_ops import (
     CommitInfo,
     GitRepository,
@@ -48,7 +47,6 @@ class RepoSyncer:
     def __init__(self, config: SyncConfig, force_reclone: bool = False):
         """Initialize the syncer with configuration."""
         self.config = config
-        self.state = SyncState.load(config.state_file)
         self.private_repo: GitRepository | None = None
         self.public_repo: GitRepository | None = None
         self.force_reclone = force_reclone
@@ -69,6 +67,17 @@ class RepoSyncer:
             console.print(f"[dim]Public repo ready at {self.config.public_repo_path}[/dim]")
         return self.private_repo, self.public_repo
 
+    def _get_last_synced_commit(self, direction: SyncDirection) -> str | None:
+        """Get the last synced commit by reading from destination repo's commit messages."""
+        private_repo, public_repo = self._init_repos()
+
+        if direction == "private-to-public":
+            # Look in public repo for synced_from: to find last private commit synced
+            return public_repo.get_last_synced_commit(self.config.commit_prefix)
+        else:
+            # Look in private repo for synced_from: to find last public commit synced
+            return private_repo.get_last_synced_commit(self.config.commit_prefix)
+
     def get_pending_commits(
         self,
         direction: SyncDirection,
@@ -76,23 +85,32 @@ class RepoSyncer:
         """Get commits that need to be synced."""
         private_repo, public_repo = self._init_repos()
 
-        # Get paths to filter commits by
-        project_paths = [p.private_path for p in self.config.get_enabled_projects()]
+        # Get the last synced commit from the destination repo's commit messages
+        last_synced = self._get_last_synced_commit(direction)
 
+        if last_synced:
+            console.print(f"[dim]Last synced commit: {last_synced[:8]}[/dim]")
+        else:
+            console.print("[dim]No previous sync found - will sync all matching commits[/dim]")
+
+        # Get paths to filter commits by (projects + individual files)
         if direction == "private-to-public":
             source_repo = private_repo
-            last_synced = self.state.last_private_commit
+            sync_paths = [p.private_path for p in self.config.get_enabled_projects()]
+            sync_paths += [f.private_path for f in self.config.get_enabled_files()]
         else:
             source_repo = public_repo
-            last_synced = self.state.last_public_commit
             # For public-to-private, use public paths
-            project_paths = [
+            sync_paths = [
                 p.resolved_public_path for p in self.config.get_enabled_projects()
+            ]
+            sync_paths += [
+                f.resolved_public_path for f in self.config.get_enabled_files()
             ]
 
         return source_repo.get_commits_since(
             since_commit=last_synced,
-            paths=project_paths if project_paths else None,
+            paths=sync_paths if sync_paths else None,
         )
 
     def preview_sync(self, direction: SyncDirection) -> None:
@@ -221,17 +239,7 @@ class RepoSyncer:
 
                 progress.advance(task)
 
-        # Update state - only to the last SUCCESSFUL commit, not the last attempted
-        if not dry_run and last_successful_commit is not None:
-            if direction == "private-to-public":
-                self.state.last_private_commit = last_successful_commit.hash
-            else:
-                self.state.last_public_commit = last_successful_commit.hash
-
-            self.state.commit_mapping.update(result.commit_mappings)
-            self.state.last_sync_timestamp = datetime.now(timezone.utc).isoformat()
-            self.state.last_sync_direction = direction
-            self.state.save(self.config.state_file)
+        # State is now tracked via synced_from: in commit messages, no state file needed
 
         # Push if configured
         if not dry_run and self.config.auto_push and result.commits_synced > 0:
@@ -269,6 +277,7 @@ class RepoSyncer:
         files_to_stage: list[str] = []
         files_to_remove: list[str] = []
 
+        # Process project (directory) changes
         for project in self.config.get_enabled_projects():
             # Get files relevant to this project
             relevant_files = filter_commit_files(commit, project, self.config)
@@ -300,6 +309,35 @@ class RepoSyncer:
                             full_dest.write_bytes(content)
                             files_to_stage.append(dest_file_path)
 
+        # Process individual file changes
+        for file_mapping in self.config.get_enabled_files():
+            # Check if this commit touches this file
+            for file_change in commit.files_changed:
+                if file_change.path != file_mapping.private_path:
+                    continue
+
+                if file_change.change_type == "D":
+                    # Handle deletion
+                    dest_file_path = file_mapping.resolved_public_path
+                    full_dest = dest_repo.path / dest_file_path
+                    if full_dest.exists():
+                        if not dry_run:
+                            full_dest.unlink()
+                        files_to_remove.append(dest_file_path)
+                else:
+                    # Handle addition or modification
+                    dest_file_path = file_mapping.resolved_public_path
+
+                    if not dry_run:
+                        content = source_repo.get_file_content_at_commit(
+                            commit.hash, file_change.path
+                        )
+                        if content is not None:
+                            full_dest = dest_repo.path / dest_file_path
+                            full_dest.parent.mkdir(parents=True, exist_ok=True)
+                            full_dest.write_bytes(content)
+                            files_to_stage.append(dest_file_path)
+
         if not files_to_stage and not files_to_remove:
             return None  # No relevant changes
 
@@ -316,8 +354,8 @@ class RepoSyncer:
             except Exception:
                 pass  # File might already be removed
 
-        # Create commit with original message
-        commit_message = f"{self.config.commit_prefix} {commit.message}"
+        # Create commit with original message and synced_from trailer
+        commit_message = f"{self.config.commit_prefix} {commit.message}\n\nsynced_from: {commit.hash}"
 
         # Only commit if we have files staged
         if not files_to_stage and not files_to_remove:
@@ -391,8 +429,9 @@ class RepoSyncer:
 
         all_copied_files: list[str] = []
 
+        # Sync projects (directories)
         for project in self.config.get_enabled_projects():
-            console.print(f"  Syncing [cyan]{project.private_path}[/cyan]...")
+            console.print(f"  Syncing project [cyan]{project.private_path}[/cyan]...")
 
             if not dry_run:
                 # Clear destination directory first
@@ -415,25 +454,42 @@ class RepoSyncer:
                     file_count = sum(1 for _ in source_path.rglob("*") if _.is_file())
                     console.print(f"    [dim]Would copy ~{file_count} files[/dim]")
 
+        # Sync individual files
+        for file_mapping in self.config.get_enabled_files():
+            console.print(f"  Syncing file [cyan]{file_mapping.private_path}[/cyan]...")
+
+            source_file = source_repo.path / file_mapping.private_path
+            dest_file = dest_repo.path / file_mapping.resolved_public_path
+
+            if not dry_run:
+                if source_file.exists():
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source_file, dest_file)
+                    all_copied_files.append(file_mapping.resolved_public_path)
+                    console.print(f"    [green]✓ Copied[/green]")
+                else:
+                    console.print(f"    [yellow]⚠ Source file not found[/yellow]")
+            else:
+                if source_file.exists():
+                    console.print(f"    [dim]Would copy file[/dim]")
+                else:
+                    console.print(f"    [dim]Source file not found[/dim]")
+
         if not dry_run and all_copied_files:
-            # Stage and commit
+            # Stage and commit with synced_from trailer
             dest_repo.stage_files(all_copied_files)
             if dest_repo.has_staged_changes():
-                new_hash = dest_repo.commit(
-                    f"{self.config.commit_prefix} Full sync from {'private' if direction == 'private-to-public' else 'public'} repo"
+                source_commit = source_repo.get_current_commit()
+                commit_message = (
+                    f"{self.config.commit_prefix} Full sync from "
+                    f"{'private' if direction == 'private-to-public' else 'public'} repo\n\n"
+                    f"synced_from: {source_commit}"
                 )
+                new_hash = dest_repo.commit(commit_message)
                 result.commits_synced = 1
                 result.files_changed = len(all_copied_files)
                 console.print(f"\n  [green]✓ Created commit {new_hash[:8]}[/green]")
-
-                # Update state
-                if direction == "private-to-public":
-                    self.state.last_private_commit = source_repo.get_current_commit()
-                else:
-                    self.state.last_public_commit = source_repo.get_current_commit()
-                self.state.last_sync_timestamp = datetime.now(timezone.utc).isoformat()
-                self.state.last_sync_direction = direction
-                self.state.save(self.config.state_file)
+                console.print(f"  [dim]synced_from: {source_commit[:8]}[/dim]")
 
         self._print_summary(result, dry_run)
         return result
@@ -447,18 +503,37 @@ class RepoSyncer:
         console.print(f"  Private repo: {self.config.private_repo_path}")
         console.print(f"  Public repo URL: {self.config.public_repo_url}")
         console.print(f"  Public repo path: {self.config.public_repo_path}")
-        console.print(f"  Projects: {len(self.config.get_enabled_projects())}")
 
-        for project in self.config.get_enabled_projects():
+        enabled_projects = self.config.get_enabled_projects()
+        enabled_files = self.config.get_enabled_files()
+
+        console.print(f"  Projects: {len(enabled_projects)}")
+        for project in enabled_projects:
             console.print(f"    • {project.private_path} → {project.resolved_public_path}")
 
-        # State info
-        console.print("\n[bold]Sync State:[/bold]")
-        console.print(f"  Last sync: {self.state.last_sync_timestamp or 'Never'}")
-        console.print(f"  Last direction: {self.state.last_sync_direction or 'N/A'}")
-        console.print(f"  Last private commit: {self.state.last_private_commit or 'N/A'}")
-        console.print(f"  Last public commit: {self.state.last_public_commit or 'N/A'}")
-        console.print(f"  Commit mappings: {len(self.state.commit_mapping)}")
+        console.print(f"  Files: {len(enabled_files)}")
+        for file in enabled_files:
+            console.print(f"    • {file.private_path} → {file.resolved_public_path}")
+
+        # Sync state from commit messages
+        console.print("\n[bold]Sync State (from commit messages):[/bold]")
+        try:
+            last_synced_to_public = self._get_last_synced_commit("private-to-public")
+            if last_synced_to_public:
+                console.print(f"  Last synced to public: {last_synced_to_public[:8]}")
+            else:
+                console.print("  Last synced to public: Never")
+        except Exception as e:
+            console.print(f"  [red]Error reading public repo: {e}[/red]")
+
+        try:
+            last_synced_to_private = self._get_last_synced_commit("public-to-private")
+            if last_synced_to_private:
+                console.print(f"  Last synced to private: {last_synced_to_private[:8]}")
+            else:
+                console.print("  Last synced to private: Never")
+        except Exception as e:
+            console.print(f"  [red]Error reading private repo: {e}[/red]")
 
         # Pending commits
         console.print("\n[bold]Pending Commits:[/bold]")

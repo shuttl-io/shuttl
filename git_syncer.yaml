@@ -21,77 +21,85 @@ projects:
   enabled: true
   exclude_patterns: []
   include_patterns: []
+files:
 - private_path: shuttl.json
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: package.json
+- private_path: .gitignore
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: pnpm-workspace.yaml
+- private_path: jest.config.ts
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: go.work
+- private_path: .npmrc
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: go.work.sum
+- private_path: .prettierignore
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: pnpm-lock.yaml
+- private_path: .prettierrc
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: nx.json
+- private_path: eslint.config.mjs
   public_path: null
   enabled: true
-  exclude_patterns: []
-- private_path: tsconfig.base.json
+- private_path: git_syncer.yaml
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
+- private_path: jest.preset.js
+  public_path: null
+  enabled: true
+- private_path: migrations.json
+  public_path: null
+  enabled: true
 - private_path: nx
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: .prettierrc 
+- private_path: nx.json
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: .prettierignore 
+- private_path: package.json
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-- private_path: .gitignore 
+- private_path: tsconfig.base.json
   public_path: null
   enabled: true
-  exclude_patterns: []
-  include_patterns: []
-
+- private_path: vitest.workspace.ts
+  public_path: null
+  enabled: true
 global_exclude_patterns:
+# Environment and secrets
 - .env
 - .env.*
 - '*.secret'
 - '*.secrets'
 - .secrets/
+# Python
 - __pycache__/
 - '*.pyc'
-- .git/
+- '*.pyo'
+- .venv/
+- venv/
+- .pytest_cache/
+- '*.egg-info/'
+- .mypy_cache/
+- .ruff_cache/
+# Node
 - node_modules/
+# Build artifacts
+- dist/
+- build/
+- coverage/
+# Git and IDE
+- .git/
 - .nx/
+- .idea/
+- .vscode/
+# OS files
+- .DS_Store
+- Thumbs.db
+# JSII
+- .jsii
 commit_prefix: '[sync]'
 state_file: .git_syncer_state.json
 dry_run: false
