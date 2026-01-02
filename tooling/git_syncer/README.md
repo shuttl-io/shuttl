@@ -8,9 +8,8 @@ A two-way sync tool for synchronizing specific projects between a private monore
 - **Remote URL support**: Specify public repo as a git URL - automatically cloned and managed
 - **Selective project sync**: Only sync specified projects/packages
 - **Commit preservation**: Maintains original commit messages, authors, and dates
-- **Tag syncing**: Automatically syncs tags pointing to synced commits
 - **Pattern-based filtering**: Exclude sensitive files with glob patterns
-- **State tracking**: Tracks sync progress via commit messages
+- **State tracking**: Tracks sync progress to only sync new commits
 - **Dry-run mode**: Preview changes before applying them
 - **Full sync mode**: Initial sync or re-sync all files
 
@@ -108,10 +107,10 @@ global_exclude_patterns:
 
 # Sync behavior
 commit_prefix: "[sync]"  # Prefix added to synced commit messages
+state_file: .git_syncer_state.json
 dry_run: false
 auto_push: false
 squash_commits: false  # If true, squash multiple commits into one
-sync_tags: true  # Sync tags pointing to synced commits
 ```
 
 ## CLI Commands
@@ -208,37 +207,14 @@ nx run git_syncer:run -- status
 ## How It Works
 
 1. **Auto-Clone**: The public repo is automatically cloned from the URL when first needed
-2. **Commit Tracking**: The syncer tracks which commits have been synced via `synced_from:` trailer in commit messages
+2. **Commit Tracking**: The syncer tracks which commits have been synced using a state file
 3. **Selective Sync**: Only files within configured projects are synced
 4. **Pattern Filtering**: Files matching exclude patterns are never synced
 5. **Commit Recreation**: Each source commit is recreated in the destination with:
    - Original commit message (with configurable prefix)
    - Original author information
    - Original timestamp
-   - A `synced_from: <source-commit-hash>` trailer for traceability
-6. **Tag Syncing**: After commits are synced, tags pointing to source commits are created on the corresponding destination commits
-
-## Tag Syncing
-
-The syncer automatically syncs tags when `sync_tags: true` (the default). When a commit is synced:
-
-1. The syncer checks if the source commit has any tags pointing to it
-2. For each tag, it creates the same tag on the destination commit
-3. If `auto_push` is enabled, tags are pushed along with commits
-
-### Tag Syncing Behavior
-
-- **Lightweight tags**: Created as-is
-- **Annotated tags**: Created as lightweight (original annotation not preserved)
-- **Existing tags**: Skipped (won't overwrite existing tags in destination)
-
-### Disable Tag Syncing
-
-To disable tag syncing, set in your config:
-
-```yaml
-sync_tags: false
-```
+6. **State Persistence**: After each sync, state is saved to resume later
 
 ## GitHub Actions Usage
 

@@ -216,30 +216,6 @@ class GitRepository:
         commit = self.repo.commit(commit_hash)
         return CommitInfo.from_commit(commit)
 
-    def get_last_synced_commit(self, commit_prefix: str = "[sync]") -> str | None:
-        """
-        Find the last synced commit by looking for 'synced_from:' in commit messages.
-
-        Searches recent commits for the sync prefix and extracts the source commit hash.
-        Returns None if no synced commits are found.
-        """
-        import re
-
-        try:
-            # Look at recent commits (limit to 100 for performance)
-            for commit in self.repo.iter_commits(self.get_current_branch(), max_count=100):
-                message = commit.message
-                # Check if this is a sync commit
-                if commit_prefix in message:
-                    # Look for synced_from: <hash> pattern
-                    match = re.search(r"synced_from:\s*([a-f0-9]{40})", message)
-                    if match:
-                        return match.group(1)
-        except GitCommandError:
-            pass
-
-        return None
-
     def get_file_content_at_commit(
         self, commit_hash: str, file_path: str
     ) -> bytes | None:
@@ -372,88 +348,6 @@ class GitRepository:
         """Fetch from remote."""
         self.repo.remote(remote).fetch()
 
-    def is_ignored(self, file_path: str) -> bool:
-        """Check if a file path is ignored by .gitignore."""
-        try:
-            # git check-ignore returns 0 if ignored, 1 if not ignored
-            self.repo.git.check_ignore(file_path)
-            return True
-        except GitCommandError:
-            return False
-
-    def get_tags_for_commit(self, commit_hash: str) -> list[str]:
-        """Get all tags pointing to a specific commit."""
-        tags = []
-        try:
-            # Get tags that point directly to this commit
-            output = self.repo.git.tag("--points-at", commit_hash)
-            if output:
-                tags = [t.strip() for t in output.splitlines() if t.strip()]
-        except GitCommandError:
-            pass
-        return tags
-
-    def get_all_tags(self) -> dict[str, str]:
-        """Get all tags and their commit hashes."""
-        tags = {}
-        try:
-            for tag in self.repo.tags:
-                tags[tag.name] = tag.commit.hexsha
-        except Exception:
-            pass
-        return tags
-
-    def create_tag(
-        self,
-        tag_name: str,
-        commit_hash: str,
-        message: str | None = None,
-        force: bool = False,
-    ) -> bool:
-        """
-        Create a tag pointing to a specific commit.
-
-        Args:
-            tag_name: Name of the tag
-            commit_hash: Commit hash to tag
-            message: Optional tag message (creates annotated tag if provided)
-            force: If True, overwrite existing tag
-
-        Returns:
-            True if tag was created, False otherwise
-        """
-        try:
-            cmd_args = []
-            if force:
-                cmd_args.append("-f")
-            if message:
-                cmd_args.extend(["-a", "-m", message])
-            cmd_args.extend([tag_name, commit_hash])
-
-            self.repo.git.tag(*cmd_args)
-            return True
-        except GitCommandError as e:
-            # Tag might already exist
-            if "already exists" in str(e):
-                return False
-            raise
-
-    def tag_exists(self, tag_name: str) -> bool:
-        """Check if a tag exists."""
-        try:
-            self.repo.git.rev_parse(f"refs/tags/{tag_name}")
-            return True
-        except GitCommandError:
-            return False
-
-    def push_tags(self, remote: str = "origin") -> None:
-        """Push all tags to remote."""
-        self.repo.git.push(remote, "--tags")
-
-    def push_tag(self, tag_name: str, remote: str = "origin") -> None:
-        """Push a specific tag to remote."""
-        self.repo.git.push(remote, f"refs/tags/{tag_name}")
-
 
 def should_include_file(
     file_path: str,
@@ -572,12 +466,6 @@ def copy_project_files(
                 continue
 
             rel_path = source_file.relative_to(source_path)
-            full_rel_path = f"{project.private_path}/{rel_path}"
-
-            # Skip if gitignored
-            if source_repo.is_ignored(full_rel_path):
-                continue
-
             if should_include_file(str(rel_path), project, config):
                 dest_file = dest_path / rel_path
                 dest_file.parent.mkdir(parents=True, exist_ok=True)

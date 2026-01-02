@@ -16,29 +16,8 @@ from pydantic import BaseModel, Field, model_validator
 DEFAULT_CLONE_DIR = Path.home() / ".git_syncer" / "repos"
 
 
-class FileMapping(BaseModel):
-    """Mapping configuration for a single file to sync."""
-
-    # Path relative to private repo root
-    private_path: str = Field(
-        ..., description="Path to the file in the private monorepo"
-    )
-    # Path relative to public repo root (defaults to same as private_path)
-    public_path: str | None = Field(
-        None,
-        description="Path in the public repo (defaults to same as private_path)",
-    )
-    # Whether to include this file in sync
-    enabled: bool = Field(default=True, description="Whether to sync this file")
-
-    @property
-    def resolved_public_path(self) -> str:
-        """Get the public path, defaulting to private path if not set."""
-        return self.public_path or self.private_path
-
-
 class ProjectMapping(BaseModel):
-    """Mapping configuration for a single project (directory) to sync."""
+    """Mapping configuration for a single project to sync."""
 
     # Path relative to private repo root
     private_path: str = Field(
@@ -123,49 +102,24 @@ class SyncConfig(BaseModel):
             name = name.rsplit(":", 1)[-1]
         return name or "public-repo"
 
-    # Projects (directories) to sync
+    # Projects to sync
     projects: list[ProjectMapping] = Field(
-        default_factory=list, description="List of projects (directories) to synchronize"
-    )
-
-    # Individual files to sync
-    files: list[FileMapping] = Field(
-        default_factory=list, description="List of individual files to synchronize"
+        default_factory=list, description="List of projects to synchronize"
     )
 
     # Global exclude patterns (applied to all projects)
     global_exclude_patterns: list[str] = Field(
         default_factory=lambda: [
-            # Environment and secrets
             ".env",
             ".env.*",
             "*.secret",
             "*.secrets",
             ".secrets/",
-            # Python
             "__pycache__/",
             "*.pyc",
-            "*.pyo",
-            ".venv/",
-            "venv/",
-            ".pytest_cache/",
-            "*.egg-info/",
-            ".mypy_cache/",
-            ".ruff_cache/",
-            # Node
-            "node_modules/",
-            # Build artifacts
-            "dist/",
-            "build/",
-            "coverage/",
-            # Git and IDE
             ".git/",
+            "node_modules/",
             ".nx/",
-            ".idea/",
-            ".vscode/",
-            # OS files
-            ".DS_Store",
-            "Thumbs.db",
         ],
         description="Patterns to exclude from all projects",
     )
@@ -193,10 +147,6 @@ class SyncConfig(BaseModel):
         default=False,
         description="Squash multiple commits into one when syncing",
     )
-    sync_tags: bool = Field(
-        default=True,
-        description="Sync tags that point to synced commits",
-    )
 
     @classmethod
     def from_yaml(cls, path: Path) -> "SyncConfig":
@@ -218,10 +168,6 @@ class SyncConfig(BaseModel):
     def get_enabled_projects(self) -> list[ProjectMapping]:
         """Get only the enabled projects."""
         return [p for p in self.projects if p.enabled]
-
-    def get_enabled_files(self) -> list[FileMapping]:
-        """Get only the enabled files."""
-        return [f for f in self.files if f.enabled]
 
 
 class SyncState(BaseModel):
@@ -273,7 +219,6 @@ def create_default_config(
     private_repo_path: Path,
     public_repo_url: str,
     projects: list[str] | None = None,
-    files: list[str] | None = None,
     public_repo_clone_path: Path | None = None,
 ) -> SyncConfig:
     """Create a default configuration with sensible defaults."""
@@ -282,16 +227,10 @@ def create_default_config(
         for project in projects:
             project_mappings.append(ProjectMapping(private_path=project))
 
-    file_mappings = []
-    if files:
-        for file in files:
-            file_mappings.append(FileMapping(private_path=file))
-
     return SyncConfig(
         private_repo_path=private_repo_path,
         public_repo_url=public_repo_url,
         public_repo_clone_path=public_repo_clone_path,
         projects=project_mappings,
-        files=file_mappings,
     )
 
