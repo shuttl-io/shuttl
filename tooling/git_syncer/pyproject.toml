@@ -1,0 +1,87 @@
+[tool.coverage.run]
+branch = true
+source = ["git_syncer"]
+
+[tool.coverage.report]
+exclude_lines = ['if TYPE_CHECKING:']
+show_missing = true
+
+[tool.pytest.ini_options]
+addopts = """
+ --cov
+ --cov-report html:'../../coverage/tooling/git_syncer/html'
+ --cov-report xml:'../../coverage/tooling/git_syncer/coverage.xml'
+ --html='../../reports/tooling/git_syncer/unittests/html/index.html'
+ --junitxml='../../reports/tooling/git_syncer/unittests/junit.xml'
+"""
+
+[project]
+name = "git_syncer"
+version = "1.0.0"
+description = "Two-way sync tool between private and public monorepos"
+requires-python = ">=3.11,<4"
+readme = "README.md"
+dependencies = [
+    "click>=8.1.7",
+    "pydantic>=2.10.0",
+    "pyyaml>=6.0.2",
+    "rich>=13.9.0",
+    "gitpython>=3.1.43",
+]
+
+[project.scripts]
+git-syncer = "git_syncer.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["git_syncer"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[dependency-groups]
+dev = [
+    "autopep8>=2.3.1",
+    "ruff>=0.8.2",
+    "pytest>=8.3.4",
+    "pytest-sugar>=1.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-html>=4.1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+exclude = [
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "dist",
+]
+
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
+ignore = []
+
+fixable = ["ALL"]
+unfixable = []
+
+
