@@ -10,25 +10,11 @@
     "nx-release-publish": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": [
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev').zip dist/shuttl",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-linux-amd64.zip dist/shuttl-linux-amd64",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-linux-arm64.zip dist/shuttl-linux-arm64",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-darwin-amd64.zip dist/shuttl-darwin-amd64",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-darwin-arm64.zip dist/shuttl-darwin-arm64",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-amd64.zip dist/shuttl-windows-amd64.exe",
-          "zip -r dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-arm64.zip dist/shuttl-windows-arm64.exe",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev').zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-linux-amd64.zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-linux-arm64.zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-darwin-amd64.zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-darwin-arm64.zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-amd64.zip",
-          "gh release upload $(git describe --tags --always --dirty 2>/dev/null || echo 'dev') dist/shuttl-cli-$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')-windows-arm64.zip"
-        ]
+        "command": "./scripts/publish.sh",
+        "cwd": "{projectRoot}"
       },
       "dependsOn": [
-        "@shuttl-io/core:build:all"
+        "build:all"
       ]
     },
     "build": {
