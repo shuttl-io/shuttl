@@ -21,6 +21,11 @@ projects:
   enabled: true
   exclude_patterns: []
   include_patterns: []
+- private_path: apps/docs
+  public_path: null
+  enabled: true
+  exclude_patterns: []
+  include_patterns: []
 files:
 - private_path: shuttl.json
   public_path: null

@@ -122,6 +122,7 @@ export interface IModel {
 export interface IModelFactoryProps {
     readonly systemPrompt: string;
     readonly tools?: ITool[];
+    readonly configuration?: Record<string, unknown>;
 }
 
 export interface IModelFactory {

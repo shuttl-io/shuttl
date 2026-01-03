@@ -45,6 +45,7 @@ export class OpenAI implements IModel {
         public readonly apiKey: string,
         public readonly systemPrompt: string,
         public readonly tools?: ITool[],
+        public readonly configuration?: Record<string, unknown>,
     ){
 
         // this.threadId = crypto.randomUUID();
@@ -363,6 +364,7 @@ export class OpenAIFactory implements IModelFactory {
     constructor(
         public readonly identifier: string,
         public readonly apiKey: ISecret,
+        public readonly configuration?: Record<string, unknown>,
     ){
         this.create = this.create.bind(this);
     }
@@ -373,6 +375,7 @@ export class OpenAIFactory implements IModelFactory {
             await this.apiKey.resolveSecret(),
             props.systemPrompt,
             props.tools,
+            this.configuration ?? {},
         );
     }
 }

@@ -1,0 +1,22 @@
+[project]
+name = "shuttl-docs"
+version = "1.0.0"
+description = "Public documentation for the Shuttl AI agent framework"
+requires-python = ">=3.9,<4"
+readme = "README.md"
+dependencies = [
+    "mkdocs>=1.6.1",
+    "mkdocs-shadcn>=0.9.8",
+    "mkdocs-material>=9.5.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["docs"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

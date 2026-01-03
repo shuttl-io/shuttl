@@ -5,7 +5,7 @@ import type { IModelFactory } from "./models/types";
 export class Model {
     protected constructor(){}
 
-    public static openAI(identifier: string, apiKey: ISecret): IModelFactory {
-        return new OpenAIFactory(identifier, apiKey);
+    public static openAI(identifier: string, apiKey: ISecret, configuration?: Record<string, unknown>): IModelFactory {
+        return new OpenAIFactory(identifier, apiKey, configuration ?? {});
     }
 }

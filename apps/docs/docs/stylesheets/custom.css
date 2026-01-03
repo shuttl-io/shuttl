@@ -1,0 +1,28 @@
+/* Scale all icons and emojis to match text size */
+.twemoji,
+.emojione,
+img.twemoji,
+img.emojione,
+svg.twemoji,
+.twemoji svg,
+.emojione svg,
+.md-typeset .twemoji,
+.md-typeset .emojione {
+    height: 1em;
+    width: 1em;
+    vertical-align: -0.125em;
+    display: inline-block;
+}
+
+/* Scale link arrow icons */
+.octicon,
+svg.octicon,
+.md-typeset .octicon,
+a .octicon,
+a svg.octicon {
+    height: 2rem;
+    width: 2rem;
+    vertical-align: -0.125em;
+    display: inline-block;
+}
+
