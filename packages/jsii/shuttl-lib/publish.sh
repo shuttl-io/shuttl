@@ -169,6 +169,29 @@ publish_js() {
     
     log_info "Found tarball: ${tarball}"
     
+    # Fix hard links in the tarball by extracting, copying with dereference, and repacking
+    log_info "Fixing hard links in tarball..."
+    local tarball_name=$(basename "${tarball}")
+    local temp_dir=$(mktemp -d)
+    local extract_dir="${temp_dir}/extract"
+    local copy_dir="${temp_dir}/copy"
+    
+    mkdir -p "${extract_dir}" "${copy_dir}"
+    
+    # Extract the tarball
+    tar -xzf "${tarball}" -C "${extract_dir}"
+    
+    # Copy with dereference to replace hard links with actual files
+    cp -rL "${extract_dir}"/* "${copy_dir}/"
+    
+    # Recreate the tarball without hard links
+    tar -czf "${tarball}" -C "${copy_dir}" .
+    
+    # Cleanup temp directory
+    rm -rf "${temp_dir}"
+    
+    log_info "Hard links fixed in tarball"
+    
     if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "[DRY RUN] Would publish: ${tarball}"
     else
