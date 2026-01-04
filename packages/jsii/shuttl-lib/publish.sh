@@ -10,7 +10,7 @@ set -euo pipefail
 # - Go -> GitHub (via git push with tags)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DIST_DIR="${SCRIPT_DIR}/shuttl-lib/dist-jsii"
+DIST_DIR="${SCRIPT_DIR}/dist-jsii"
 
 # Colors for output
 RED='\033[0;31m'
