@@ -165,11 +165,86 @@ func runCommandSilent(dir, name string, args ...string) error {
 }
 
 // ============================================================================
+// Version Fetching Helpers
+// ============================================================================
+
+func getLatestNPMVersion(packageName string) (string, error) {
+	cmd := exec.Command("npm", "view", packageName, "version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get latest version: %w", err)
+	}
+	version := strings.TrimSpace(string(output))
+	if version == "" {
+		return "", fmt.Errorf("no version found for package %s", packageName)
+	}
+	return "^" + version, nil
+}
+
+func getLatestPythonVersion(packageName string) (string, error) {
+	// Try pip index versions (pip 23.0+)
+	cmd := exec.Command("pip", "index", "versions", packageName)
+	output, err := cmd.Output()
+	if err == nil {
+		// Parse output: "Available versions: 0.1.5, 0.1.4, ..."
+		outputStr := string(output)
+		lines := strings.Split(outputStr, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Available versions:") {
+				// Extract first version (latest)
+				parts := strings.Fields(line)
+				for _, part := range parts {
+					if strings.Contains(part, ".") && !strings.Contains(part, "Available") {
+						version := strings.Trim(part, ",")
+						return ">=" + version, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: return empty string to use no version constraint (pip will get latest)
+	return "", nil
+}
+
+func getLatestMavenVersion(groupId, artifactId string) (string, error) {
+	// Maven supports LATEST as a version specifier
+	// We'll use that, but first try to validate it works
+	cmd := exec.Command("mvn", "dependency:get", "-Dartifact="+groupId+":"+artifactId+":LATEST", "-q", "-Dtransitive=false")
+	if err := cmd.Run(); err == nil {
+		return "LATEST", nil
+	}
+	// If LATEST doesn't work, return empty to let Maven handle it
+	return "", fmt.Errorf("could not resolve LATEST version")
+}
+
+func getLatestNuGetVersion(packageName string) (string, error) {
+	// For NuGet, we can omit the version to get latest, or use *
+	// But let's try to get the actual latest version
+	// Use dotnet add package with --dry-run to see what version would be installed
+	// Note: This requires a project file, so we'll use a different approach
+	// We can use nuget.exe if available, or just omit version (NuGet gets latest by default)
+	// For simplicity, return empty to indicate we should omit version
+	return "", nil
+}
+
+// ============================================================================
 // TypeScript Project Generator
 // ============================================================================
 
 func generateTypeScriptProject(projectDir, projectName string, skipInstall bool) error {
 	fmt.Println("📦 Creating TypeScript project structure...")
+
+	// Get the latest version of @shuttl-io/core
+	fmt.Println("🔍 Fetching latest version of @shuttl-io/core...")
+	coreVersion := "^0.2.0" // fallback
+	version, err := getLatestNPMVersion("@shuttl-io/core")
+	if err != nil {
+		fmt.Printf("   ⚠️  Warning: Could not fetch latest version: %v. Using fallback %s\n", err, coreVersion)
+	} else {
+		fmt.Printf("   ✓ Found latest version: %s\n", version)
+		coreVersion = version
+	}
 
 	// Create package.json
 	packageJSON := fmt.Sprintf(`{
@@ -184,7 +259,7 @@ func generateTypeScriptProject(projectDir, projectName string, skipInstall bool)
     "build": "tsc"
   },
   "dependencies": {
-    "@shuttl-io/core": "^0.1.5"
+    "@shuttl-io/core": "%s"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -192,7 +267,7 @@ func generateTypeScriptProject(projectDir, projectName string, skipInstall bool)
     "typescript": "^5.6.0"
   }
 }
-`, projectName)
+`, projectName, coreVersion)
 	if err := writeFile(filepath.Join(projectDir, "package.json"), packageJSON); err != nil {
 		return err
 	}
@@ -307,7 +382,26 @@ func generatePythonProject(projectDir, projectName string, skipInstall bool) err
 	// Normalize project name for Python (replace hyphens with underscores)
 	moduleName := strings.ReplaceAll(projectName, "-", "_")
 
+	// Get the latest version of shuttl-core
+	fmt.Println("🔍 Fetching latest version of shuttl-core...")
+	coreVersion := ">=0.1.5" // fallback
+	version, err := getLatestPythonVersion("shuttl-core")
+	if err != nil {
+		fmt.Printf("   ⚠️  Warning: Could not fetch latest version: %v. Using fallback %s\n", err, coreVersion)
+	} else if version != "" {
+		fmt.Printf("   ✓ Found latest version: %s\n", version)
+		coreVersion = version
+	} else {
+		// No version constraint means pip will get latest
+		coreVersion = ""
+		fmt.Println("   ✓ Will install latest version from PyPI")
+	}
+
 	// Create pyproject.toml
+	dependencyLine := "shuttl-core"
+	if coreVersion != "" {
+		dependencyLine = "shuttl-core" + coreVersion
+	}
 	pyprojectTOML := fmt.Sprintf(`[project]
 name = "%s"
 version = "0.1.0"
@@ -315,7 +409,7 @@ description = "A Shuttl AI agent project"
 requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "shuttl-core>=0.1.5",
+    "%s",
 ]
 
 [project.scripts]
@@ -651,6 +745,17 @@ func generateJavaProject(projectDir, projectName string, skipInstall bool) error
 	groupId := "com.example"
 	artifactId := projectName
 
+	// Get the latest version of the Maven dependency
+	fmt.Println("🔍 Fetching latest version of io.shuttl.module:core...")
+	coreVersion := "0.1.5" // fallback
+	version, err := getLatestMavenVersion("io.shuttl.module", "core")
+	if err != nil {
+		fmt.Printf("   ⚠️  Warning: Could not fetch latest version: %v. Using fallback %s\n", err, coreVersion)
+	} else {
+		fmt.Printf("   ✓ Found latest version: %s\n", version)
+		coreVersion = version
+	}
+
 	// Create pom.xml
 	pomXML := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -676,7 +781,7 @@ func generateJavaProject(projectDir, projectName string, skipInstall bool) error
         <dependency>
             <groupId>io.shuttl.module</groupId>
             <artifactId>core</artifactId>
-            <version>0.1.5</version>
+            <version>%s</version>
         </dependency>
     </dependencies>
 
@@ -705,7 +810,7 @@ func generateJavaProject(projectDir, projectName string, skipInstall bool) error
         </plugins>
     </build>
 </project>
-`, groupId, artifactId, projectName, groupId, packageName, groupId, packageName)
+`, groupId, artifactId, projectName, coreVersion, groupId, packageName, groupId, packageName)
 	if err := writeFile(filepath.Join(projectDir, "pom.xml"), pomXML); err != nil {
 		return err
 	}
@@ -853,7 +958,12 @@ OPENAI_API_KEY=your-api-key-here
 func generateCSharpProject(projectDir, projectName string, skipInstall bool) error {
 	fmt.Println("📦 Creating C# project structure...")
 
+	// For NuGet, we'll use a version range to get the latest version
+	// Version range [0.0.0,) means any version >= 0.0.0, which resolves to latest
+	fmt.Println("🔍 Will install latest version of shuttl.core from NuGet...")
+
 	// Create .csproj file
+	// Note: Using version range [0.0.0,) will resolve to the latest available version
 	csproj := fmt.Sprintf(`<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
@@ -865,7 +975,7 @@ func generateCSharpProject(projectDir, projectName string, skipInstall bool) err
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="shuttl.core" Version="0.1.5" />
+    <PackageReference Include="shuttl.core" Version="[0.0.0,)" />
   </ItemGroup>
 
 </Project>
