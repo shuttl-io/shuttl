@@ -1,3 +1,14 @@
+## 0.2.1 (2026-01-05)
+
+### 🩹 Fixes
+
+- move the publish script to the right place ([b06d8c4](https://github.com/shuttl-io/shuttl/commit/b06d8c4))
+- remove hardlinks caused by dependencies ([a16fdef](https://github.com/shuttl-io/shuttl/commit/a16fdef))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.2.0 (2026-01-04)
 
 ### 🚀 Features
