@@ -107,7 +107,7 @@ global_exclude_patterns:
   - ".nx/"
 
 # Sync behavior
-commit_prefix: "[sync]"  # Prefix added to synced commit messages
+commit_suffix: "[sync]"  # Suffix added to synced commit messages
 dry_run: false
 auto_push: false
 squash_commits: false  # If true, squash multiple commits into one

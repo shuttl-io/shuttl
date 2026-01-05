@@ -105,7 +105,7 @@ global_exclude_patterns:
 - Thumbs.db
 # JSII
 - .jsii
-commit_prefix: '[sync]'
+commit_suffix: '[sync]'
 dry_run: false
 auto_push: false
 squash_commits: false

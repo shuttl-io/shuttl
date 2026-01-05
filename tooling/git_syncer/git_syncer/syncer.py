@@ -74,10 +74,10 @@ class RepoSyncer:
 
         if direction == "private-to-public":
             # Look in public repo for synced_from: to find last private commit synced
-            return public_repo.get_last_synced_commit(self.config.commit_prefix)
+            return public_repo.get_last_synced_commit(self.config.commit_suffix)
         else:
             # Look in private repo for synced_from: to find last public commit synced
-            return private_repo.get_last_synced_commit(self.config.commit_prefix)
+            return private_repo.get_last_synced_commit(self.config.commit_suffix)
 
     def get_pending_commits(
         self,
@@ -375,7 +375,7 @@ class RepoSyncer:
                 pass  # File might already be removed
 
         # Create commit with original message and synced_from trailer
-        commit_message = f"{self.config.commit_prefix} {commit.message}\n\nsynced_from: {commit.hash}"
+        commit_message = f"{commit.message}\n\nsynced_from: {commit.hash}\n\n{self.config.commit_suffix}"
 
         # Only commit if we have files staged
         if not files_to_stage and not files_to_remove:
@@ -555,9 +555,9 @@ class RepoSyncer:
             if dest_repo.has_staged_changes():
                 source_commit = source_repo.get_current_commit()
                 commit_message = (
-                    f"{self.config.commit_prefix} Full sync from "
+                    f"Full sync from "
                     f"{'private' if direction == 'private-to-public' else 'public'} repo\n\n"
-                    f"synced_from: {source_commit}"
+                    f"synced_from: {source_commit}\n\n{self.config.commit_suffix}"
                 )
                 new_hash = dest_repo.commit(commit_message)
                 result.commits_synced = 1

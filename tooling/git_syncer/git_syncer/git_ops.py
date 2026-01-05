@@ -216,11 +216,12 @@ class GitRepository:
         commit = self.repo.commit(commit_hash)
         return CommitInfo.from_commit(commit)
 
-    def get_last_synced_commit(self, commit_prefix: str = "[sync]") -> str | None:
+    def get_last_synced_commit(self, commit_suffix: str = "[sync]") -> str | None:
         """
         Find the last synced commit by looking for 'synced_from:' in commit messages.
 
-        Searches recent commits for the sync prefix and extracts the source commit hash.
+        Searches recent commits for the sync suffix/prefix and extracts the source commit hash.
+        Supports both old format (prefix at start) and new format (suffix at end) for backwards compatibility.
         Returns None if no synced commits are found.
         """
         import re
@@ -229,8 +230,18 @@ class GitRepository:
             # Look at recent commits (limit to 100 for performance)
             for commit in self.repo.iter_commits(self.get_current_branch(), max_count=100):
                 message = commit.message
+                message_stripped = message.rstrip()
+                
                 # Check if this is a sync commit
-                if commit_prefix in message:
+                # Old format: message starts with suffix (backwards compatibility)
+                # New format: message ends with suffix
+                is_sync_commit = (
+                    message_stripped.startswith(commit_suffix) or
+                    message_stripped.endswith(commit_suffix) or
+                    message_stripped.endswith(f"\n{commit_suffix}")
+                )
+                
+                if is_sync_commit:
                     # Look for synced_from: <hash> pattern
                     match = re.search(r"synced_from:\s*([a-f0-9]{40})", message)
                     if match:

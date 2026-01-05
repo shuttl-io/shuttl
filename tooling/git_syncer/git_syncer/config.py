@@ -170,10 +170,10 @@ class SyncConfig(BaseModel):
         description="Patterns to exclude from all projects",
     )
 
-    # Commit message prefix for synced commits
-    commit_prefix: str = Field(
+    # Commit message suffix for synced commits
+    commit_suffix: str = Field(
         default="[sync]",
-        description="Prefix to add to commit messages when syncing",
+        description="Suffix to add to commit messages when syncing",
     )
 
     # State file to track sync progress
