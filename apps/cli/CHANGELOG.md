@@ -1,3 +1,13 @@
+## 0.2.2 (2026-01-05)
+
+### 🩹 Fixes
+
+- **minor:** update the go generator to use correct path. ([8416544](https://github.com/shuttl-io/shuttl/commit/8416544))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.3.1 (2026-01-05)
 
 This was a version bump only for cli to align it with other projects, there were no code changes.
