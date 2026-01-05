@@ -421,7 +421,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["%s"]
-`, projectName, moduleName, moduleName, moduleName)
+`, projectName, dependencyLine, moduleName, moduleName, moduleName)
 	if err := writeFile(filepath.Join(projectDir, "pyproject.toml"), pyprojectTOML); err != nil {
 		return err
 	}
