@@ -1,3 +1,13 @@
+## 0.2.4 (2026-01-05)
+
+### 🩹 Fixes
+
+- update the publish process to seperate all languages. ([b96abca](https://github.com/shuttl-io/shuttl/commit/b96abca))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.2.3 (2026-01-05)
 
 ### 🩹 Fixes

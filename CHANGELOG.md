@@ -1,3 +1,14 @@
+## 0.2.4 (2026-01-05)
+
+### 🩹 Fixes
+
+- update the publish process to seperate all languages. ([b96abca](https://github.com/shuttl-io/shuttl/commit/b96abca))
+- instead of hardcoding all versions, just ask the package manager for the latest ([6ffe448](https://github.com/shuttl-io/shuttl/commit/6ffe448))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.2.3 (2026-01-05)
 
 ### 🩹 Fixes
