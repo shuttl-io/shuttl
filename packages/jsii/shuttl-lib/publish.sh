@@ -184,8 +184,8 @@ publish_js() {
     # Copy with dereference to replace hard links with actual files
     cp -rL "${extract_dir}"/* "${copy_dir}/"
     
-    # Recreate the tarball without hard links
-    tar -czf "${tarball}" -C "${copy_dir}" .
+    # Recreate the tarball without hard links and without ./ prefix
+    (cd "${copy_dir}" && tar -czf "${tarball}" *)
     
     # Cleanup temp directory
     rm -rf "${temp_dir}"

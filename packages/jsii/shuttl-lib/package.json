@@ -1,6 +1,6 @@
 {
   "name": "@shuttl-io/core",
-  "version": "0.2.0",
+  "version": "0.1.5",
   "description": "The JSII library for Shuttl AI models",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,7 @@
     "url": "https://www.shuttl.io"
   },
   "repository": {
-    "url": "https://github.com/shuttl-io/shuttl_ai.git"
+    "url": "https://github.com/shuttl-io/shuttl.git"
   },
   "license": "MIT",
   "stability": "stable",
