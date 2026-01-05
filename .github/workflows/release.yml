@@ -38,6 +38,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install twine
+        run: pip install twine
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
@@ -69,4 +72,5 @@ jobs:
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
 
