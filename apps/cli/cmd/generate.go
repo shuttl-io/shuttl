@@ -468,16 +468,41 @@ OPENAI_API_KEY=your-api-key-here
 // Go Project Generator
 // ============================================================================
 
+func getLatestGoModuleVersion(modulePath string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Version}}", modulePath+"@latest")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get latest version: %w", err)
+	}
+	version := strings.TrimSpace(string(output))
+	if version == "" {
+		return "", fmt.Errorf("no version found for module %s", modulePath)
+	}
+	return version, nil
+}
+
 func generateGoProject(projectDir, projectName string, skipInstall bool) error {
 	fmt.Println("📦 Creating Go project structure...")
+
+	// Get the latest version from the repository
+	fmt.Println("🔍 Fetching latest version of shuttl-core-go...")
+	modulePath := "github.com/shuttl-io/shuttl-core-go"
+	version, err := getLatestGoModuleVersion(modulePath)
+	if err != nil {
+		// Fallback to a default version if we can't fetch the latest
+		fmt.Printf("   ⚠️  Warning: Could not fetch latest version: %v. Using default v0.1.5\n", err)
+		version = "v0.1.5"
+	} else {
+		fmt.Printf("   ✓ Found latest version: %s\n", version)
+	}
 
 	// Create go.mod
 	goMod := fmt.Sprintf(`module %s
 
 go 1.23
 
-require github.com/shuttl-io/shuttl-core-go/core v0.1.5
-`, projectName)
+require %s %s
+`, projectName, modulePath, version)
 	if err := writeFile(filepath.Join(projectDir, "go.mod"), goMod); err != nil {
 		return err
 	}
@@ -488,7 +513,7 @@ require github.com/shuttl-io/shuttl-core-go/core v0.1.5
 import (
 	"os"
 
-	"github.com/shuttl-io/shuttl-core-go/core"
+	"github.com/shuttl-io/shuttl-core-go"
 )
 
 func main() {
