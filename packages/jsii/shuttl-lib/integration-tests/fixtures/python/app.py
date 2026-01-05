@@ -4,10 +4,15 @@ Python test application for integration testing
 
 This app creates a simple agent with a toolkit and tool,
 then starts the StdInServer to accept IPC commands.
+
+Note: JSII interfaces must be implemented using the @jsii.implements
+decorator, not by inheriting from the interface directly.
+See: https://aws.github.io/jsii/user-guides/lib-user/language-specific/python/
 """
 
 import sys
 import os
+import jsii
 
 # Add the built Python package to the path
 # The package will be installed in the virtual environment
@@ -22,7 +27,8 @@ from shuttl.model import (
 from shuttl.model.tools import ITool, ToolArg
 
 
-class EchoTool(ITool):
+@jsii.implements(ITool)
+class EchoTool:
     """A simple test tool that echoes its input"""
     
     def __init__(self):
@@ -65,7 +71,8 @@ class EchoTool(ITool):
         }
 
 
-class MathTool(ITool):
+@jsii.implements(ITool)
+class MathTool:
     """A tool that performs simple math"""
     
     def __init__(self):

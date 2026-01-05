@@ -34,15 +34,15 @@ export class App {
         this.toolkits.add(toolkit);
     }
 
-    public serve(): void {
+    public async serve(): Promise<void> {
         let originalConsoleLog: (...args: any[]) => void | undefined;
         if (process.env._SHUTTL_CONTROL === "true") {
             originalConsoleLog = console.log.bind(console);
             this.monkeyPatchConsoleLog();
-            this.server.start();
+            await this.server.start();
             console.log = originalConsoleLog;
         } else {
-            this.server.start();
+            await this.server.start();
         }
     }
 

@@ -44,6 +44,8 @@ dotnet add package shuttl.core
 
 ## Quick Start
 
+### TypeScript
+
 ```typescript
 import { Agent, Model, Secret, Schema } from "@shuttl-io/core";
 
@@ -64,6 +66,76 @@ export const weatherAgent = new Agent({
     model: Model.openAI("gpt-4", Secret.fromEnv("OPENAI_KEY")),
     tools: [weatherTool],
 });
+```
+
+### Python
+
+In Python, tools must be implemented using the `@jsii.implements()` decorator. **Do not inherit directly from the interface** - this will cause metaclass conflicts. See the [JSII Python documentation](https://aws.github.io/jsii/user-guides/lib-user/language-specific/python/#implementing-interfaces) for details.
+
+```python
+import jsii
+from shuttl.core import App, StdInServer, Agent, Model, Secret
+from shuttl.core.tools import ITool, ToolArg
+
+
+@jsii.implements(ITool)
+class WeatherTool:
+    """A tool that gets weather information."""
+    
+    def __init__(self):
+        self._name = "get_weather"
+        self._description = "Get current weather for a location"
+    
+    @property
+    def name(self) -> str:
+        return self._name
+    
+    @name.setter
+    def name(self, value: str):
+        self._name = value
+    
+    @property
+    def description(self) -> str:
+        return self._description
+    
+    @description.setter
+    def description(self, value: str):
+        self._description = value
+    
+    def execute(self, args):
+        location = args.get("location", "Unknown")
+        return {"temperature": 72, "condition": "sunny", "location": location}
+    
+    def produce_args(self):
+        return {
+            "location": ToolArg(
+                name="location",
+                arg_type="string",
+                description="City name",
+                required=True,
+                default_value=None,
+            ),
+        }
+
+
+def main():
+    server = StdInServer()
+    app = App("weather-bot", server)
+    
+    model = Model.open_ai("gpt-4", Secret.from_env("OPENAI_KEY"))
+    agent = Agent(
+        name="WeatherBot",
+        system_prompt="You help users check the weather.",
+        model=model,
+        tools=[WeatherTool()],
+    )
+    
+    app.add_agent(agent)
+    app.serve()
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 Run `shuttl dev` and your agent is live.
