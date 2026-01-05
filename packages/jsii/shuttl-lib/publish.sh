@@ -380,28 +380,74 @@ publish_go() {
         local temp_dir=$(mktemp -d)
         
         log_info "Cloning Go module repository..."
-        git clone "https://${go_repo}.git" "${temp_dir}/repo" 2>/dev/null || {
+        local repo_cloned=false
+        if git clone "https://${go_repo}.git" "${temp_dir}/repo" 2>/dev/null; then
+            repo_cloned=true
+        else
             # If repo doesn't exist, initialize a new one
             mkdir -p "${temp_dir}/repo"
             cd "${temp_dir}/repo"
             git init
             git remote add origin "https://${go_repo}.git"
-        }
+        fi
+        
+        cd "${temp_dir}/repo"
+        
+        # Determine the default branch and ensure we're on it
+        local default_branch="main"
+        if [[ "${repo_cloned}" == "true" ]]; then
+            # Try to determine the default branch from remote
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+                default_branch="main"
+                git checkout -b main origin/main 2>/dev/null || git checkout main 2>/dev/null || true
+            elif git show-ref --verify --quiet refs/remotes/origin/master; then
+                default_branch="master"
+                git checkout -b master origin/master 2>/dev/null || git checkout master 2>/dev/null || true
+            else
+                # No remote branches, create main
+                git checkout -b main 2>/dev/null || true
+            fi
+        else
+            # New repo, create main branch
+            git checkout -b main 2>/dev/null || true
+        fi
         
         # Copy generated Go files
         cp -r "${module_dir}"/* "${temp_dir}/repo/"
         
-        cd "${temp_dir}/repo"
+        # Add all files
         git add -A
-        git commit -m "Release v${version}" || log_info "No changes to commit"
-        git tag -a "v${version}" -m "Release v${version}" 2>/dev/null || log_warning "Tag v${version} may already exist"
+        
+        # Check if there are any changes to commit
+        local has_changes=false
+        if ! git diff --staged --quiet || ! git diff --quiet; then
+            has_changes=true
+        fi
+        
+        if [[ "${has_changes}" == "true" ]]; then
+            git commit -m "Release v${version}"
+            log_info "Committed changes for release v${version}"
+        else
+            log_info "No file changes detected, but will still tag and push version v${version}"
+        fi
+        
+        # Always create/update the tag (force update if it exists)
+        # Tag should point to current HEAD (whether it's a new commit or existing)
+        git tag -a "v${version}" -m "Release v${version}" -f
+        log_info "Created/updated tag v${version}"
         
         # Push with authentication if token is available
         if [[ -n "${GO_REPO_TOKEN:-}" ]]; then
             git remote set-url origin "https://x-access-token:${GO_REPO_TOKEN}@${go_repo}.git"
         fi
         
-        git push origin main --tags || git push origin master --tags
+        # Always push commits (will be no-op if nothing to push)
+        log_info "Pushing commits to ${default_branch}..."
+        git push origin "${default_branch}" || log_warning "No commits to push or push failed"
+        
+        # Always push the tag (force push to update if it exists)
+        log_info "Pushing tag v${version}..."
+        git push origin "v${version}" --force
         
         # Cleanup
         rm -rf "${temp_dir}"
