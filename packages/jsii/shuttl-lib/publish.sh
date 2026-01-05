@@ -411,6 +411,97 @@ publish_go() {
 }
 
 # ==============================================================================
+# GitHub Release Artifact Upload
+# ==============================================================================
+upload_artifacts_to_github_release() {
+    # Check if we're running in GitHub Actions
+    if [[ -z "${GITHUB_ACTIONS:-}" ]]; then
+        log_info "Not running in GitHub Actions, skipping artifact upload"
+        return 0
+    fi
+    
+    # Check if gh CLI is available
+    if ! command -v gh &> /dev/null; then
+        log_warning "GitHub CLI (gh) is not available, skipping artifact upload"
+        return 0
+    fi
+    
+    # Get version from git tag - only upload if there's a release tag
+    local version
+    local tag
+    tag=$(git tag --points-at HEAD 2>/dev/null | head -1)
+    if [[ -z "${tag}" ]]; then
+        log_info "No release tag found at HEAD, skipping artifact upload"
+        return 0
+    fi
+    version="${tag}"
+    # Extract version number (remove 'v' prefix if present)
+    local version_num="${version#v}"
+    
+    log_info "Uploading artifacts to GitHub release: ${version}"
+    
+    # Language directories to check
+    local lang_dirs=("js" "dotnet" "python" "java" "go")
+    local uploaded=0
+    local temp_dir=$(mktemp -d)
+    
+    # Process each language directory
+    for lang_dir in "${lang_dirs[@]}"; do
+        local lang_path="${DIST_DIR}/${lang_dir}"
+        
+        # Skip if directory doesn't exist
+        if [[ ! -d "${lang_path}" ]]; then
+            continue
+        fi
+        
+        # Count files in the directory
+        local file_count=$(find "${lang_path}" -type f | wc -l)
+        
+        if [[ ${file_count} -eq 0 ]]; then
+            log_info "No files found in ${lang_dir} directory, skipping"
+            continue
+        fi
+        
+        local artifact_file
+        
+        if [[ ${file_count} -gt 1 ]]; then
+            # Multiple files: create a tarball
+            local tarball_name="${lang_dir}-core@${version_num}.tar.gz"
+            local tarball_path="${temp_dir}/${tarball_name}"
+            
+            log_info "Creating tarball for ${lang_dir} (${file_count} files): ${tarball_name}"
+            (cd "${DIST_DIR}" && tar -czf "${tarball_path}" "${lang_dir}")
+            artifact_file="${tarball_path}"
+        else
+            # Single file: use it directly
+            local single_file=$(find "${lang_path}" -type f | head -1)
+            artifact_file="${single_file}"
+            log_info "Found single file in ${lang_dir}: $(basename "${artifact_file}")"
+        fi
+        
+        # Upload the artifact
+        if [[ -f "${artifact_file}" ]]; then
+            log_info "Uploading: $(basename "${artifact_file}")"
+            if gh release upload "${version}" "${artifact_file}" --clobber 2>/dev/null; then
+                uploaded=$((uploaded + 1))
+                log_success "Uploaded: $(basename "${artifact_file}")"
+            else
+                log_warning "Failed to upload: $(basename "${artifact_file}")"
+            fi
+        fi
+    done
+    
+    # Cleanup temp directory
+    rm -rf "${temp_dir}"
+    
+    if [[ ${uploaded} -gt 0 ]]; then
+        log_success "Uploaded ${uploaded} artifact(s) to GitHub release ${version}"
+    else
+        log_warning "No artifacts were successfully uploaded"
+    fi
+}
+
+# ==============================================================================
 # Main Execution
 # ==============================================================================
 log_info "Starting JSII package publishing..."
@@ -441,6 +532,10 @@ fi
 echo ""
 if [[ ${FAILED} -eq 0 ]]; then
     log_success "All packages published successfully!"
+    
+    # Upload artifacts to GitHub release if running in GitHub Actions
+    upload_artifacts_to_github_release
+    
     exit 0
 else
     log_error "${FAILED} package(s) failed to publish"
