@@ -1,3 +1,13 @@
+## 0.2.3 (2026-01-05)
+
+### 🩹 Fixes
+
+- use correct repo token for go repo ([e93de4e](https://github.com/shuttl-io/shuttl/commit/e93de4e))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.2.2 (2026-01-05)
 
 ### 🩹 Fixes
