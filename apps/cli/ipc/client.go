@@ -278,6 +278,7 @@ func (c *Client) monitorProcess() {
 
 	err := c.cmd.Wait()
 	c.setState(StateStopped)
+	log.Warn("Subprocess exited: %v", err)
 
 	if err != nil && c.ctx.Err() == nil {
 		// Output the error and stderr to the user

@@ -439,20 +439,49 @@ packages = ["%s"]
 
 	// Create main.py
 	mainPy := `"""Main entry point for the Shuttl AI agent."""
-import os
-from shuttl_core import App, StdInServer, Agent, Model, Secret, Schema
+import jsii
+from shuttl.core import App, StdInServer, Agent, Model, Secret
+from shuttl.core import ITool, ToolArg
 
 
-def create_greet_tool():
-    """Create a simple greeting tool."""
-    return {
-        "name": "greet",
-        "description": "Greet someone by name",
-        "schema": Schema.object_value({
-            "name": Schema.string_value("The name of the person to greet").is_required(),
-        }),
-        "execute": lambda args: {"message": f"Hello, {args['name']}!"},
-    }
+@jsii.implements(ITool)
+class GreetTool:
+    """A simple tool that greets someone by name."""
+    
+    def __init__(self):
+        self._name = "greet"
+        self._description = "Greet someone by name"
+    
+    @property
+    def name(self) -> str:
+        return self._name
+    
+    @name.setter
+    def name(self, value: str):
+        self._name = value
+    
+    @property
+    def description(self) -> str:
+        return self._description
+    
+    @description.setter
+    def description(self, value: str):
+        self._description = value
+    
+    def execute(self, args):
+        name = args.get("name", "World")
+        return {"message": f"Hello, {name}!"}
+    
+    def produce_args(self):
+        return {
+            "name": ToolArg(
+                name="name",
+                arg_type="string",
+                description="The name of the person to greet",
+                required=True,
+                default_value=None,
+            ),
+        }
 
 
 def create_agent():
@@ -463,7 +492,7 @@ def create_agent():
         name="MyAgent",
         system_prompt="You are a helpful assistant that can greet people.",
         model=model,
-        tools=[create_greet_tool()],
+        tools=[GreetTool()],
         toolkits=[],
         triggers=[],
     )
@@ -509,31 +538,46 @@ OPENAI_API_KEY=your-api-key-here
 		return err
 	}
 
-	// Create README.md
-	readme := fmt.Sprintf("# %s\n\nA Shuttl AI agent project.\n\n## Setup\n\n"+
-		"1. Create a virtual environment:\n```bash\n"+
-		"python -m venv .venv\nsource .venv/bin/activate  # On Windows: .venv\\Scripts\\activate\n```\n\n"+
-		"2. Install dependencies:\n```bash\npip install -e .\n```\n\n"+
-		"3. Copy `.env.example` to `.env` and add your API keys.\n\n"+
-		"4. Run the agent:\n```bash\nshuttl dev\n```\n", projectName)
+	// Detect if uv is available
+	hasUv := runCommandSilent(projectDir, "uv", "--version") == nil
+
+	// Create README.md with appropriate instructions
+	var readme string
+	if hasUv {
+		readme = fmt.Sprintf("# %s\n\nA Shuttl AI agent project.\n\n## Setup\n\n"+
+			"1. Install dependencies:\n```bash\nuv sync\n```\n\n"+
+			"2. Copy `.env.example` to `.env` and add your API keys.\n\n"+
+			"3. Run the agent:\n```bash\nshuttl dev\n```\n", projectName)
+	} else {
+		readme = fmt.Sprintf("# %s\n\nA Shuttl AI agent project.\n\n## Setup\n\n"+
+			"1. Create a virtual environment:\n```bash\n"+
+			"python -m venv .venv\nsource .venv/bin/activate  # On Windows: .venv\\Scripts\\activate\n```\n\n"+
+			"2. Install dependencies:\n```bash\npip install -e .\n```\n\n"+
+			"3. Copy `.env.example` to `.env` and add your API keys.\n\n"+
+			"4. Run the agent:\n```bash\nshuttl dev\n```\n", projectName)
+	}
 	if err := writeFile(filepath.Join(projectDir, "README.md"), readme); err != nil {
 		return err
 	}
 
-	// Create shuttl.json
-	if err := writeShuttlJSON(projectDir, fmt.Sprintf("python -m %s.main", moduleName)); err != nil {
+	// Create shuttl.json with appropriate command based on uv availability
+	var appCommand string
+	if hasUv {
+		appCommand = fmt.Sprintf("uv run python -m %s.main", moduleName)
+		fmt.Println("   ✓ Detected uv - using 'uv run' for project execution")
+	} else {
+		appCommand = fmt.Sprintf("python -m %s.main", moduleName)
+	}
+	if err := writeShuttlJSON(projectDir, appCommand); err != nil {
 		return err
 	}
 
-	// Try to install dependencies with uv, fallback to pip
+	// Install dependencies
 	if !skipInstall {
 		fmt.Println("📥 Installing dependencies...")
-		if err := runCommandSilent(projectDir, "uv", "--version"); err == nil {
-			// uv is available
-			if err := runCommand(projectDir, "uv", "venv"); err != nil {
-				return fmt.Errorf("failed to create virtual environment: %w", err)
-			}
-			if err := runCommand(projectDir, "uv", "pip", "install", "-e", "."); err != nil {
+		if hasUv {
+			// uv is available - use uv sync for better dependency management
+			if err := runCommand(projectDir, "uv", "sync"); err != nil {
 				return fmt.Errorf("failed to install dependencies: %w", err)
 			}
 		} else {
@@ -552,7 +596,11 @@ OPENAI_API_KEY=your-api-key-here
 			}
 		}
 	} else {
-		fmt.Println("⏭️  Skipping dependency installation (run 'pip install -e .' to install)")
+		if hasUv {
+			fmt.Println("⏭️  Skipping dependency installation (run 'uv sync' to install)")
+		} else {
+			fmt.Println("⏭️  Skipping dependency installation (run 'pip install -e .' to install)")
+		}
 	}
 
 	return nil
@@ -941,8 +989,11 @@ OPENAI_API_KEY=your-api-key-here
 	// Install dependencies
 	if !skipInstall {
 		fmt.Println("📥 Installing dependencies...")
+		if err := runCommandSilent(projectDir, "mvn", "--version"); err != nil {
+			return fmt.Errorf("Maven not found. Please install Maven and try again, or use --skip-install")
+		}
 		if err := runCommand(projectDir, "mvn", "dependency:resolve"); err != nil {
-			fmt.Println("   ⚠️  Maven not found or failed. Run 'mvn dependency:resolve' manually.")
+			return fmt.Errorf("failed to install dependencies: %w", err)
 		}
 	} else {
 		fmt.Println("⏭️  Skipping dependency installation (run 'mvn dependency:resolve' to install)")
@@ -1085,8 +1136,11 @@ OPENAI_API_KEY=your-api-key-here
 	// Restore dependencies
 	if !skipInstall {
 		fmt.Println("📥 Installing dependencies...")
+		if err := runCommandSilent(projectDir, "dotnet", "--version"); err != nil {
+			return fmt.Errorf(".NET SDK not found. Please install .NET SDK and try again, or use --skip-install")
+		}
 		if err := runCommand(projectDir, "dotnet", "restore"); err != nil {
-			fmt.Println("   ⚠️  .NET SDK not found or failed. Run 'dotnet restore' manually.")
+			return fmt.Errorf("failed to install dependencies: %w", err)
 		}
 	} else {
 		fmt.Println("⏭️  Skipping dependency installation (run 'dotnet restore' to install)")

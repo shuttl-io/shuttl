@@ -106,27 +106,87 @@ Or download directly from [GitHub Releases](https://github.com/shuttl-io/shuttl/
     Create `agent.py`:
 
     ```python
-    from shuttl import Application
+    import jsii
+    from shuttl.core import App, StdInServer, Agent, Model, Secret
+    from shuttl.core.tools import ITool, ToolArg
 
-    app = Application("my-agent")
 
-    @app.toolkit("greetings", "Tools for greeting users")
-    class GreetingToolkit:
+    @jsii.implements(ITool)
+    class GreetTool:
+        """A tool that generates personalized greetings.
         
-        @tool(
-            name="greet",
-            description="Generate a personalized greeting",
-            args={
-                "name": {"type": "string", "required": True},
-                "style": {"type": "enum", "values": ["formal", "casual"]},
-            }
-        )
-        def greet(self, name: str, style: str = "casual") -> dict:
+        Note: JSII interfaces must be implemented using the @jsii.implements
+        decorator, not by inheriting from the interface directly.
+        See: https://aws.github.io/jsii/user-guides/lib-user/language-specific/python/
+        """
+        
+        def __init__(self):
+            self._name = "greet"
+            self._description = "Generate a personalized greeting"
+        
+        @property
+        def name(self) -> str:
+            return self._name
+        
+        @name.setter
+        def name(self, value: str):
+            self._name = value
+        
+        @property
+        def description(self) -> str:
+            return self._description
+        
+        @description.setter
+        def description(self, value: str):
+            self._description = value
+        
+        def execute(self, args):
+            name = args.get("name", "World")
+            style = args.get("style", "casual")
             greetings = {
                 "formal": f"Good day, {name}. How may I assist you?",
                 "casual": f"Hey {name}! What's up?",
+                "enthusiastic": f"{name}!!! So great to see you! 🎉",
             }
-            return {"greeting": greetings[style]}
+            return {"greeting": greetings.get(style, greetings["casual"])}
+        
+        def produce_args(self):
+            return {
+                "name": ToolArg(
+                    name="name",
+                    arg_type="string",
+                    description="The person's name",
+                    required=True,
+                    default_value=None,
+                ),
+                "style": ToolArg(
+                    name="style",
+                    arg_type="string",
+                    description="Greeting style: formal, casual, or enthusiastic",
+                    required=False,
+                    default_value="casual",
+                ),
+            }
+
+
+    def main():
+        server = StdInServer()
+        app = App("my-agent", server)
+        
+        model = Model.open_ai("gpt-4", Secret.from_env("OPENAI_API_KEY"))
+        agent = Agent(
+            name="GreeterAgent",
+            system_prompt="You are a friendly greeter. Use the greet tool to welcome users based on their preferences.",
+            model=model,
+            tools=[GreetTool()],
+        )
+        
+        app.add_agent(agent)
+        app.serve()
+
+
+    if __name__ == "__main__":
+        main()
     ```
 
 ---
