@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/shuttl-ai/cli/log"
@@ -87,6 +89,13 @@ type Client struct {
 	stdout  io.ReadCloser
 	stderr  io.ReadCloser
 
+	// Named pipe paths and handles
+	pipeDir          string
+	requestPipePath  string
+	responsePipePath string
+	requestPipe      *os.File
+	responsePipe     *os.File
+
 	// Channels for output
 	outputChan chan OutputLine
 	errChan    chan error
@@ -143,39 +152,60 @@ func (c *Client) Start() error {
 		return fmt.Errorf("no command specified")
 	}
 
+	// Create named pipes for IPC
+	if err := c.createNamedPipes(); err != nil {
+		c.setState(StateStopped)
+		return fmt.Errorf("failed to create named pipes: %w", err)
+	}
+
 	// Create the command with arguments
 	c.cmd = exec.CommandContext(c.ctx, c.command[0], c.command[1:]...)
-	c.cmd.Env = append(os.Environ(), "_SHUTTL_CONTROL=true")
+	c.cmd.Env = append(os.Environ(),
+		"_SHUTTL_CONTROL=true",
+		fmt.Sprintf("_SHUTTL_REQUEST_PIPE=%s", c.requestPipePath),
+		fmt.Sprintf("_SHUTTL_RESPONSE_PIPE=%s", c.responsePipePath),
+	)
 
-	// Get pipes
+	// Get stderr pipe for error output
 	var err error
-	c.stdin, err = c.cmd.StdinPipe()
-	if err != nil {
-		c.setState(StateStopped)
-		return fmt.Errorf("failed to get stdin pipe: %w", err)
-	}
-
-	c.stdout, err = c.cmd.StdoutPipe()
-	if err != nil {
-		c.setState(StateStopped)
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-
 	c.stderr, err = c.cmd.StderrPipe()
 	if err != nil {
+		c.cleanupNamedPipes()
 		c.setState(StateStopped)
 		return fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
+		c.cleanupNamedPipes()
 		c.setState(StateStopped)
 		return fmt.Errorf("failed to start process: %w", err)
 	}
 
+	// Open named pipes after process starts
+	// Note: Opening FIFOs can block until both ends are connected
+	// Open response pipe first (for reading), then request pipe (for writing)
+
+	// Open response pipe for reading (will block until writer opens)
+	c.responsePipe, err = os.OpenFile(c.responsePipePath, os.O_RDONLY, os.ModeNamedPipe)
+	if err != nil {
+		c.cleanupNamedPipes()
+		c.setState(StateStopped)
+		return fmt.Errorf("failed to open response pipe: %w", err)
+	}
+
+	// Open request pipe for writing
+	c.requestPipe, err = os.OpenFile(c.requestPipePath, os.O_WRONLY, os.ModeNamedPipe)
+	if err != nil {
+		c.responsePipe.Close()
+		c.cleanupNamedPipes()
+		c.setState(StateStopped)
+		return fmt.Errorf("failed to open request pipe: %w", err)
+	}
+
 	// Start reading goroutines
 	c.wg.Add(2)
-	go c.readOutput(c.stdout, "stdout")
+	go c.readOutput(c.responsePipe, "response_pipe")
 	go c.readOutput(c.stderr, "stderr")
 
 	// Start process monitor goroutine
@@ -183,6 +213,50 @@ func (c *Client) Start() error {
 	go c.monitorProcess()
 
 	return nil
+}
+
+// createNamedPipes creates the named pipes (FIFOs) for IPC
+func (c *Client) createNamedPipes() error {
+	// Create a temporary directory for the pipes
+	var err error
+	c.pipeDir, err = os.MkdirTemp("", "shuttl-ipc-*")
+	if err != nil {
+		return fmt.Errorf("failed to create pipe directory: %w", err)
+	}
+
+	c.requestPipePath = filepath.Join(c.pipeDir, "request")
+	c.responsePipePath = filepath.Join(c.pipeDir, "response")
+
+	// Create the named pipes (FIFOs)
+	if err := syscall.Mkfifo(c.requestPipePath, 0600); err != nil {
+		os.RemoveAll(c.pipeDir)
+		return fmt.Errorf("failed to create request pipe: %w", err)
+	}
+
+	if err := syscall.Mkfifo(c.responsePipePath, 0600); err != nil {
+		os.RemoveAll(c.pipeDir)
+		return fmt.Errorf("failed to create response pipe: %w", err)
+	}
+
+	log.DebugWithPrefix("IPC", "Created named pipes: request=%s, response=%s", c.requestPipePath, c.responsePipePath)
+	return nil
+}
+
+// cleanupNamedPipes removes the named pipes and their directory
+func (c *Client) cleanupNamedPipes() {
+	if c.requestPipe != nil {
+		c.requestPipe.Close()
+		c.requestPipe = nil
+	}
+	if c.responsePipe != nil {
+		c.responsePipe.Close()
+		c.responsePipe = nil
+	}
+	if c.pipeDir != "" {
+		os.RemoveAll(c.pipeDir)
+		log.DebugWithPrefix("IPC", "Cleaned up named pipes: %s", c.pipeDir)
+		c.pipeDir = ""
+	}
 }
 
 // readOutput reads lines from a pipe and sends them to the output channel
@@ -237,7 +311,8 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 				errChan <- err
 			}
 
-			if source == "stdout" {
+			// Send to output channel for stdout or response_pipe, error channel for stderr
+			if source == "stdout" || source == "response_pipe" {
 				select {
 				case outputChan <- output:
 				default:
@@ -253,8 +328,9 @@ func (c *Client) readOutput(pipe io.ReadCloser, source string) {
 					}
 				}
 			} else {
+				// stderr - send to error channel
 				select {
-				case errChan <- fmt.Errorf("%s scanner error: %s", source, line):
+				case errChan <- fmt.Errorf("%s: %s", source, line):
 				default:
 				}
 			}
@@ -274,6 +350,8 @@ func (c *Client) monitorProcess() {
 		for key := range c.specialChannels {
 			c.CloseSpecialChannel(key)
 		}
+		// Clean up named pipes when process exits
+		c.cleanupNamedPipes()
 	}()
 
 	err := c.cmd.Wait()
@@ -321,10 +399,13 @@ func (c *Client) Send(req Request) error {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// Write message with newline
-	_, err = c.stdin.Write(append(data, '\n'))
+	// Write message with newline to the request pipe
+	if c.requestPipe == nil {
+		return fmt.Errorf("request pipe is not open")
+	}
+	_, err = c.requestPipe.Write(append(data, '\n'))
 	if err != nil {
-		return fmt.Errorf("failed to write to stdin: %w", err)
+		return fmt.Errorf("failed to write to request pipe: %w", err)
 	}
 
 	return nil
@@ -484,7 +565,7 @@ func (c *Client) Errors() <-chan error {
 	return c.errChan
 }
 
-// Stop gracefully stops the subprocess by closing stdin first
+// Stop gracefully stops the subprocess by closing the request pipe first
 func (c *Client) Stop() error {
 	c.stateMu.Lock()
 	if c.state != StateRunning {
@@ -494,9 +575,10 @@ func (c *Client) Stop() error {
 	c.state = StateStopping
 	c.stateMu.Unlock()
 
-	// Close stdin to signal the subprocess to exit gracefully
-	if c.stdin != nil {
-		c.stdin.Close()
+	// Close request pipe to signal the subprocess to exit gracefully
+	if c.requestPipe != nil {
+		c.requestPipe.Close()
+		c.requestPipe = nil
 	}
 
 	// Wait for subprocess to exit with timeout
@@ -509,6 +591,7 @@ func (c *Client) Stop() error {
 	select {
 	case <-done:
 		// Subprocess exited gracefully
+		c.cleanupNamedPipes()
 	case <-time.After(5 * time.Second):
 		// Force kill if not exited
 		return c.Kill()
@@ -540,6 +623,9 @@ func (c *Client) Kill() error {
 	// Wait for goroutines to finish
 	c.wg.Wait()
 	c.setState(StateStopped)
+
+	// Clean up named pipes
+	c.cleanupNamedPipes()
 
 	return nil
 }

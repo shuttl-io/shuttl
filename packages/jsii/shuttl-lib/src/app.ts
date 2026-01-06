@@ -2,6 +2,7 @@ import { Agent } from "./agent";
 import { Toolkit } from "./tools/toolkit";
 import { IServer } from "./Server"
 import { stderr } from "process";
+import { NamedPipeServer } from "./server/http";
 
 export class App {
     readonly name: string;
@@ -15,9 +16,9 @@ export class App {
     //@internal
     public readonly server: IServer;
 
-    public constructor(name: string, server: IServer) {
+    public constructor(name: string, server?: IServer) {
         this.name = name;
-        this.server = server;
+        this.server = server ?? new NamedPipeServer();
         this.agents = [];
         this.toolkits = new Set();
         this.server.accept(this);
@@ -34,7 +35,7 @@ export class App {
         this.toolkits.add(toolkit);
     }
 
-    public async serve(): Promise<void> {
+    public async serve(): Promise<boolean> {
         let originalConsoleLog: (...args: any[]) => void | undefined;
         if (process.env._SHUTTL_CONTROL === "true") {
             originalConsoleLog = console.log.bind(console);
@@ -44,6 +45,8 @@ export class App {
         } else {
             await this.server.start();
         }
+
+        return true;
     }
 
     //Monkey patch console.log to log to stderr

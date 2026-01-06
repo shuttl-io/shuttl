@@ -1,10 +1,12 @@
-import { App } from "../app";
+import { type App } from "../app";
 import { IServer } from "../Server";
-import { stdin, stdout } from "process";
+import { stdin, stdout, stderr } from "process";
 import { createInterface, Interface } from "readline";
 import { Agent, AgentStreamer, IAgentStreamerWriter } from "../agent";
 import { FileAttachment, InputContent, isFileAttachmentArray, IModelResponseStream, ModelResponse, ModelResponseStreamValue } from "../models/types";
 import { ITriggerInvoker, SerializedHTTPRequest } from "../trigger/ITrigger";
+import { createReadStream, createWriteStream, existsSync } from "fs";
+import { WriteStream } from "fs";
 
 /**
  * Request message format from the host CLI
@@ -49,6 +51,15 @@ export class StdInServer implements IServer {
     private app?: App;
     private running: boolean = false;
     private rl?: Interface;
+    private keepAliveTimer?: ReturnType<typeof setInterval>;
+
+    /**
+     * Check if the server is running
+     * @returns true if the server is running, false otherwise
+     */
+    public isRunning(): boolean {
+        return this.running;
+    }
 
     public constructor() {}
 
@@ -93,6 +104,7 @@ export class StdInServer implements IServer {
 
         // Keep the process alive while running
         while (this.running) {
+            console.log("Server is", this.running ? "running" : "stopped");
             await new Promise((resolve) => setTimeout(resolve, 100));
         }
     }
@@ -101,6 +113,10 @@ export class StdInServer implements IServer {
         this.running = false;
         if (this.rl) {
             this.rl.close();
+        }
+        if (this.keepAliveTimer) {
+            clearInterval(this.keepAliveTimer);
+            this.keepAliveTimer = undefined;
         }
     }
 
@@ -657,7 +673,748 @@ export class StdInServer implements IServer {
         stdout.write(json + "\n");
     }
 
-} 
+}
+
+/**
+ * Environment variable names for named pipe paths
+ */
+const SHUTTL_REQUEST_PIPE = "_SHUTTL_REQUEST_PIPE";
+const SHUTTL_RESPONSE_PIPE = "_SHUTTL_RESPONSE_PIPE";
+
+/**
+ * A server that communicates via named pipes (FIFOs).
+ * This avoids conflicts with JSII's stdin/stdout usage.
+ * 
+ * The CLI creates named pipes and passes paths via environment variables:
+ * - _SHUTTL_REQUEST_PIPE: Path to the request pipe (CLI writes, server reads)
+ * - _SHUTTL_RESPONSE_PIPE: Path to the response pipe (server writes, CLI reads)
+ */
+export class NamedPipeServer implements IServer {
+    private app?: App;
+    private running: boolean = false;
+    private rl?: Interface;
+    private responseStream?: WriteStream;
+    private keepAliveTimer?: ReturnType<typeof setInterval>;
+
+    public constructor() {}
+
+    public isRunning(): boolean {
+        return this.running;
+    }
+
+    public accept(app: any): void {
+        this.app = app;
+    }
+
+    public async start(): Promise<void> {
+        if (!this.app) {
+            throw new Error("No app registered. Call accept() before start().");
+        }
+
+        // Get pipe paths from environment variables
+        const requestPipePath = process.env[SHUTTL_REQUEST_PIPE];
+        const responsePipePath = process.env[SHUTTL_RESPONSE_PIPE];
+
+        if (!requestPipePath || !responsePipePath) {
+            throw new Error(
+                `Named pipe paths not configured. Set ${SHUTTL_REQUEST_PIPE} and ${SHUTTL_RESPONSE_PIPE} environment variables.`
+            );
+        }
+
+        // Verify pipes exist
+        if (!existsSync(requestPipePath)) {
+            throw new Error(`Request pipe does not exist: ${requestPipePath}`);
+        }
+        if (!existsSync(responsePipePath)) {
+            throw new Error(`Response pipe does not exist: ${responsePipePath}`);
+        }
+
+        this.running = true;
+
+        // Open the response pipe for writing
+        this.responseStream = createWriteStream(responsePipePath, { flags: 'a' });
+        
+        // Wait for the response stream to be ready
+        await new Promise<void>((resolve, reject) => {
+            this.responseStream!.on('open', () => resolve());
+            this.responseStream!.on('error', (err) => reject(err));
+        });
+
+        // Open the request pipe for reading
+        const requestStream = createReadStream(requestPipePath);
+
+        // Create readline interface for line-by-line processing
+        this.rl = createInterface({
+            input: requestStream,
+            output: undefined,
+            terminal: false,
+        });
+
+        // Handle each line as a JSON message
+        this.rl.on("line", (line: string) => {
+            this.handleLine(line);
+        });
+
+        // Handle pipe close
+        this.rl.on("close", () => {
+            stderr.write("[NamedPipeServer] Request pipe closed\n");
+            this.running = false;
+        });
+
+        // Handle errors
+        requestStream.on("error", (err) => {
+            stderr.write(`[NamedPipeServer] Request pipe error: ${err.message}\n`);
+            this.running = false;
+        });
+
+        // Send ready signal
+        this.sendResponse({
+            id: "__ready__",
+            success: true,
+            result: {
+                name: this.app.name,
+                protocol: "ndjson",
+                version: "1.0",
+                transport: "named_pipe",
+            },
+        });
+
+        // Keep the process alive using a timer reference
+        this.keepAliveTimer = setInterval(() => {
+            // Heartbeat - keeps the event loop alive
+        }, 1000 * 60 * 60);
+
+        // Block until stop() is called or pipes close
+        await new Promise<void>((resolve) => {
+            const checkRunning = () => {
+                if (!this.running) {
+                    resolve();
+                } else {
+                    setTimeout(checkRunning, 100);
+                }
+            };
+            checkRunning();
+        });
+
+        // Cleanup
+        if (this.keepAliveTimer) {
+            clearInterval(this.keepAliveTimer);
+        }
+    }
+
+    public async stop(): Promise<void> {
+        this.running = false;
+        if (this.rl) {
+            this.rl.close();
+        }
+        if (this.responseStream) {
+            this.responseStream.end();
+        }
+        if (this.keepAliveTimer) {
+            clearInterval(this.keepAliveTimer);
+            this.keepAliveTimer = undefined;
+        }
+    }
+
+    /**
+     * Process a single line of input
+     */
+    private handleLine(line: string): void {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            return;
+        }
+
+        let request: IPCRequest;
+
+        try {
+            request = JSON.parse(trimmed) as IPCRequest;
+        } catch (e) {
+            this.sendResponse({
+                id: "__parse_error__",
+                success: false,
+                errorObj: {
+                    code: "PARSE_ERROR",
+                    message: `Invalid JSON: ${(e as Error).message}`,
+                },
+            });
+            return;
+        }
+
+        if (!request.id || typeof request.id !== "string") {
+            this.sendResponse({
+                id: request.id ?? "__invalid__",
+                success: false,
+                errorObj: {
+                    code: "INVALID_REQUEST",
+                    message: "Request must have a string 'id' field",
+                },
+            });
+            return;
+        }
+
+        if (!request.method || typeof request.method !== "string") {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_REQUEST",
+                    message: "Request must have a string 'method' field",
+                },
+            });
+            return;
+        }
+
+        this.handleRequest(request);
+    }
+
+    /**
+     * Route and handle a validated request
+     */
+    private handleRequest(request: IPCRequest): void {
+        try {
+            switch (request.method) {
+                case "ping":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: { pong: true, timestamp: Date.now(), protocol_version: "1.0" },
+                    });
+                    break;
+
+                case "getAppInfo":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: {
+                            name: this.app!.name,
+                            agentCount: this.app!.agents.length,
+                            toolkitCount: this.app!.toolkits.size,
+                        },
+                    });
+                    break;
+
+                case "listAgents":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: this.app!.agents.map((agent) => ({
+                            name: agent.name,
+                            systemPrompt: agent.systemPrompt,
+                            model: agent.model,
+                            toolkits: agent.toolkits.map((tk) => tk.name),
+                        })),
+                    });
+                    break;
+
+                case "listToolkits":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: Array.from(this.app!.toolkits).map((toolkit) => ({
+                            name: toolkit.name,
+                            description: toolkit.description,
+                            tools: toolkit.tools.map((tool) => ({
+                                name: tool.name,
+                                description: tool.description,
+                                args: tool.schema?.properties,
+                            })),
+                        })),
+                    });
+                    break;
+
+                case "listTriggers":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: this.app!.agents.flatMap((agent) => 
+                            agent.triggers.map((trigger) => ({
+                                name: trigger.name,
+                                triggerType: trigger.triggerType,
+                                agentName: agent.name,
+                            }))
+                        ),
+                    });
+                    break;
+
+                case "listModels":
+                    const modelsMap = new Map<string, { identifier: string; key: { source: string; name: string } }>();
+                    for (const agent of this.app!.agents) {
+                        const model = agent.model as any;
+                        if (model && model.identifier) {
+                            modelsMap.set(model.identifier, {
+                                identifier: model.identifier,
+                                key: model.key,
+                            });
+                        }
+                    }
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: Array.from(modelsMap.values()),
+                    });
+                    break;
+
+                case "listPrompts":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: this.app!.agents.map((agent) => ({
+                            agentName: agent.name,
+                            systemPrompt: agent.systemPrompt,
+                        })),
+                    });
+                    break;
+
+                case "listTools":
+                    const allTools: Array<{
+                        name: string;
+                        description: string;
+                        args: Record<string, unknown> | undefined;
+                        toolkitName: string;
+                    }> = [];
+                    for (const toolkit of this.app!.toolkits) {
+                        for (const tool of toolkit.tools) {
+                            allTools.push({
+                                name: tool.name,
+                                description: tool.description,
+                                args: tool.schema?.properties,
+                                toolkitName: toolkit.name,
+                            });
+                        }
+                    }
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: allTools,
+                    });
+                    break;
+
+                case "invokeTool":
+                    this.handleInvokeTool(request);
+                    break;
+
+                case "shutdown":
+                    this.sendResponse({
+                        id: request.id,
+                        success: true,
+                        result: { shutting_down: true },
+                    });
+                    this.stop();
+                    break;
+
+                case "invokeAgent":
+                    this.handleInvokeAgent(request);
+                    break;
+
+                case "invokeTrigger":
+                    this.handleInvokeTrigger(request);
+                    break;
+
+                default:
+                    this.sendResponse({
+                        id: request.id,
+                        success: false,
+                        errorObj: {
+                            code: "UNKNOWN_METHOD",
+                            message: `Unknown method: ${request.method}`,
+                        },
+                    });
+            }
+        } catch (e) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INTERNAL_ERROR",
+                    message: (e as Error).message,
+                },
+            });
+        }
+    }
+
+    private async handleInvokeAgent(request: IPCRequest): Promise<void> {
+        const params = request.body ?? {};
+        const agentName = params.agent as string | undefined;
+        const prompt = (params.prompt as string) ?? "";
+        const threadId = params.threadId as string | undefined ?? undefined;
+        const rawAttachments = params.attachments;
+        
+        let attachments: FileAttachment[] | undefined;
+        if (rawAttachments !== undefined) {
+            if (isFileAttachmentArray(rawAttachments)) {
+                attachments = rawAttachments;
+            } else {
+                this.sendResponse({
+                    id: request.id,
+                    success: false,
+                    errorObj: {
+                        code: "INVALID_PARAMS",
+                        message: "attachments must be an array of FileAttachment objects",
+                    },
+                });
+                return;
+            }
+        }
+
+        if (!agentName) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeAgent requires 'agent' param",
+                },
+            });
+            return;
+        }
+
+        const agent = this.app!.agents.find((a) => a.name === agentName);
+        if (!agent) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Agent not found: ${agentName}`,
+                },
+            });
+            return;
+        }
+
+        const streamer = createNamedPipeAgentStreamer(agent, request.id, this.responseStream!);
+        try {
+            const model = await agent.invoke(prompt, threadId, streamer, attachments);
+            this.sendResponse({
+                id: request.id,
+                success: true,
+                result: { threadId: model.threadId, status: "invoked" },
+            });
+        } catch (e) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INTERNAL_ERROR",
+                    message: JSON.stringify({
+                        message: (e as Error).message,
+                        stack: (e as Error).stack,
+                        name: (e as Error).name,
+                    }),
+                },
+            });
+        }
+    }
+
+    private handleInvokeTool(request: IPCRequest): void {
+        const params = request.body ?? {};
+        const toolkitName = params.toolkit as string | undefined;
+        const toolName = params.tool as string | undefined;
+        const toolArgs = (params.args as Record<string, unknown>) ?? {};
+
+        if (!toolkitName || !toolName) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeTool requires 'toolkit' and 'tool' params",
+                },
+            });
+            return;
+        }
+
+        const toolkit = Array.from(this.app!.toolkits).find(
+            (tk) => tk.name === toolkitName
+        );
+        if (!toolkit) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Toolkit not found: ${toolkitName}`,
+                },
+            });
+            return;
+        }
+
+        const tool = toolkit.tools.find((t) => t.name === toolName);
+        if (!tool) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Tool not found: ${toolName} in toolkit ${toolkitName}`,
+                },
+            });
+            return;
+        }
+
+        try {
+            const result = tool.execute(toolArgs);
+            
+            if (result instanceof Promise) {
+                result
+                    .then((asyncResult) => {
+                        this.sendResponse({
+                            id: request.id,
+                            success: true,
+                            result: asyncResult,
+                        });
+                    })
+                    .catch((e) => {
+                        this.sendResponse({
+                            id: request.id,
+                            success: false,
+                            errorObj: {
+                                code: "TOOL_ERROR",
+                                message: (e as Error).message,
+                            },
+                        });
+                    });
+            } else {
+                this.sendResponse({
+                    id: request.id,
+                    success: true,
+                    result,
+                });
+            }
+        } catch (e) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "TOOL_ERROR",
+                    message: (e as Error).message,
+                },
+            });
+        }
+    }
+
+    private async handleInvokeTrigger(request: IPCRequest): Promise<void> {
+        const params = request.body ?? {};
+        const agentName = params.agentName as string | undefined;
+        const triggerName = params.triggerName as string | undefined;
+        const triggerType = params.triggerType as string | undefined;
+        const threadId = params.threadId as string | undefined;
+        const httpRequest = params.httpRequest as SerializedHTTPRequest | undefined;
+
+        if (!agentName) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeTrigger requires 'agentName' param",
+                },
+            });
+            return;
+        }
+
+        if (!triggerName && !triggerType) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "INVALID_PARAMS",
+                    message: "invokeTrigger requires 'triggerName' or 'triggerType' param",
+                },
+            });
+            return;
+        }
+
+        const agent = this.app!.agents.find((a) => a.name === agentName);
+        if (!agent) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Agent not found: ${agentName}`,
+                },
+            });
+            return;
+        }
+
+        let trigger = agent.triggers.find((t) => t.name === triggerName);
+        if (!trigger && triggerType) {
+            trigger = agent.triggers.find((t) => t.triggerType === triggerType);
+        }
+
+        if (!trigger) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "NOT_FOUND",
+                    message: `Trigger not found: ${triggerName || triggerType} on agent ${agentName}`,
+                },
+            });
+            return;
+        }
+
+        if (trigger.validate) {
+            try {
+                const validationResult = await trigger.validate(httpRequest);
+                if (validationResult.error) {
+                    this.sendResponse({
+                        id: request.id,
+                        success: false,
+                        errorObj: {
+                            code: "VALIDATION_ERROR",
+                            message: validationResult.error as string,
+                        },
+                    });
+                    return;
+                }
+            } catch (e) {
+                this.sendResponse({
+                    id: request.id,
+                    success: false,
+                    errorObj: {
+                        code: "VALIDATION_ERROR",
+                        message: (e as Error).message,
+                    },
+                });
+                return;
+            }
+        }
+
+        const invoker = new NamedPipeTriggerInvoker(agent, request.id, this.responseStream!, threadId);
+
+        try {
+            const triggerFunc = async () => {
+                await trigger.activate(httpRequest, invoker);
+
+                this.sendResponse({
+                    id: request.id,
+                    success: true,
+                    result: {
+                        agentName: agentName,
+                        triggerName: trigger.name,
+                        triggerType: trigger.triggerType,
+                        threadId: invoker.getThreadId(),
+                        status: "completed",
+                        output: invoker.getOutput(),
+                    },
+                });
+            }
+            triggerFunc();
+
+            this.sendResponse({
+                id: request.id,
+                success: true,
+                result: {
+                    agentName: agentName,
+                    triggerName: trigger.name,
+                    triggerType: trigger.triggerType,
+                    threadId: invoker.getThreadId(),
+                    status: "acknowledged",
+                    output: invoker.getOutput(),
+                },
+            });
+        } catch (e) {
+            this.sendResponse({
+                id: request.id,
+                success: false,
+                errorObj: {
+                    code: "TRIGGER_ERROR",
+                    message: JSON.stringify({
+                        message: (e as Error).message,
+                        stack: (e as Error).stack,
+                        name: (e as Error).name,
+                    }),
+                },
+            });
+        }
+    }
+
+    /**
+     * Send a JSON response to the response pipe
+     */
+    private sendResponse(response: IPCResponse): void {
+        if (this.responseStream && !this.responseStream.destroyed) {
+            const json = JSON.stringify(response);
+            this.responseStream.write(json + "\n");
+        }
+    }
+}
+
+/**
+ * Writer that outputs to a named pipe instead of stdout
+ */
+class NamedPipeWriter implements IAgentStreamerWriter {
+    constructor(private readonly responseStream: WriteStream) {}
+
+    write(value: string): void {
+        if (this.responseStream && !this.responseStream.destroyed) {
+            this.responseStream.write(value + "\n");
+        }
+    }
+}
+
+/**
+ * Factory function to create an AgentStreamer that writes to a named pipe
+ */
+function createNamedPipeAgentStreamer(
+    agent: Agent,
+    requestId: string,
+    responseStream: WriteStream,
+    customWriter?: IAgentStreamerWriter
+): AgentStreamer {
+    const writer = customWriter ?? new NamedPipeWriter(responseStream);
+    return new AgentStreamer(agent, requestId, writer);
+}
+
+/**
+ * Trigger invoker that writes to a named pipe
+ */
+class NamedPipeTriggerInvoker implements ITriggerInvoker {
+    private output: unknown = null;
+    private currentThreadId: string | undefined;
+
+    constructor(
+        private readonly agent: Agent,
+        private readonly requestId: string,
+        private readonly responseStream: WriteStream,
+        private readonly threadId?: string,
+    ) {
+        this.currentThreadId = threadId;
+    }
+
+    public async invoke(prompt: InputContent[]): Promise<IModelResponseStream> {
+        const writer = new TriggerStreamerWriter();
+        const streamer = createNamedPipeAgentStreamer(this.agent, this.requestId, this.responseStream, writer);
+        
+        const modelContent = prompt.map((input) => ({
+            role: "user" as const,
+            content: input,
+        }));
+
+        const startStream = async () => {
+            const model = await this.agent.invoke(modelContent, this.threadId, streamer);
+            this.currentThreadId = model.threadId;
+        }
+
+        startStream();
+
+        return writer;
+    }
+
+    public async defaultOutcome(_stream: IModelResponseStream): Promise<void> {
+        this.output = { completed: true };
+    }
+
+    public getOutput(): unknown {
+        return this.output;
+    }
+
+    public getThreadId(): string | undefined {
+        return this.currentThreadId;
+    }
+}
 
 interface TriggerResponse extends ModelResponse {
     id: string;
