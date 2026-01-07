@@ -1,3 +1,13 @@
+## 0.4.7 (2026-01-07)
+
+### 🩹 Fixes
+
+- use io_ instead of io for java ([ec52675](https://github.com/shuttl-io/shuttl/commit/ec52675))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.4.6 (2026-01-07)
 
 This was a version bump only, there were no code changes.
