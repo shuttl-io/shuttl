@@ -1,3 +1,13 @@
+## 0.4.8 (2026-01-07)
+
+### 🩹 Fixes
+
+- change the java namespace back to correct ([4a1364e](https://github.com/shuttl-io/shuttl/commit/4a1364e))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.4.7 (2026-01-07)
 
 ### 🩹 Fixes
