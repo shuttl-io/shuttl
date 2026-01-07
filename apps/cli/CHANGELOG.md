@@ -1,3 +1,13 @@
+## 0.4.1 (2026-01-07)
+
+### 🚀 Features
+
+- support windows named pipes too ([167e0fc](https://github.com/shuttl-io/shuttl/commit/167e0fc))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.4.0 (2026-01-07)
 
 ### 🚀 Features
