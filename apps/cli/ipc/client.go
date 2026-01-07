@@ -8,13 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/containerd/fifo"
 	"github.com/shuttl-ai/cli/log"
 )
 
@@ -184,7 +181,7 @@ func (c *Client) Start() error {
 	}
 
 	// Open named pipes after process starts (platform-specific)
-	if err := c.openPipes(); err != nil {
+	if err := c.openPipes(c.ctx); err != nil {
 		c.cleanupNamedPipes()
 		c.setState(StateStopped)
 		return fmt.Errorf("failed to open pipes: %w", err)
@@ -200,68 +197,6 @@ func (c *Client) Start() error {
 	go c.monitorProcess()
 
 	return nil
-}
-
-// createNamedPipes creates the named pipe paths for IPC
-// The actual FIFOs are created when opened with O_CREAT flag
-func (c *Client) createNamedPipes() error {
-	// Create a temporary directory for the pipes
-	var err error
-	c.pipeDir, err = os.MkdirTemp("", "shuttl-ipc-*")
-	if err != nil {
-		return fmt.Errorf("failed to create pipe directory: %w", err)
-	}
-
-	c.requestPipePath = filepath.Join(c.pipeDir, "request")
-	c.responsePipePath = filepath.Join(c.pipeDir, "response")
-
-	log.DebugWithPrefix("IPC", "Created named pipe paths: request=%s, response=%s", c.requestPipePath, c.responsePipePath)
-	return nil
-}
-
-// openPipes opens the named pipes for communication using containerd/fifo
-// This handles cross-platform FIFO creation and opening
-func (c *Client) openPipes() error {
-	var err error
-
-	// Open response pipe for reading with O_CREAT to create if needed
-	// The subprocess will open the write end
-	c.responsePipe, err = fifo.OpenFifo(c.ctx, c.responsePipePath, syscall.O_RDONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to open response pipe: %w", err)
-	}
-
-	// Open request pipe for writing with O_CREAT to create if needed
-	// The subprocess will open the read end
-	c.requestPipe, err = fifo.OpenFifo(c.ctx, c.requestPipePath, syscall.O_WRONLY|syscall.O_CREAT|syscall.O_NONBLOCK, 0600)
-	if err != nil {
-		c.responsePipe.Close()
-		return fmt.Errorf("failed to open request pipe: %w", err)
-	}
-
-	return nil
-}
-
-// getResponsePipeReader returns a reader for the response pipe
-func (c *Client) getResponsePipeReader() io.ReadCloser {
-	return c.responsePipe
-}
-
-// cleanupNamedPipes removes the named pipes and their directory
-func (c *Client) cleanupNamedPipes() {
-	if c.requestPipe != nil {
-		c.requestPipe.Close()
-		c.requestPipe = nil
-	}
-	if c.responsePipe != nil {
-		c.responsePipe.Close()
-		c.responsePipe = nil
-	}
-	if c.pipeDir != "" {
-		os.RemoveAll(c.pipeDir)
-		log.DebugWithPrefix("IPC", "Cleaned up named pipes: %s", c.pipeDir)
-		c.pipeDir = ""
-	}
 }
 
 // readOutput reads lines from a pipe and sends them to the output channel

@@ -131,8 +131,9 @@ while [[ $# -gt 0 ]]; do
             echo "Environment variables:"
             echo "  NPM_TOKEN              npm authentication token"
             echo "  PYPI_TOKEN             PyPI authentication token"
-            echo "  MAVEN_USERNAME         Maven Central username"
-            echo "  MAVEN_PASSWORD         Maven Central password"
+            echo "  MAVEN_USERNAME         Sonatype Central Portal username"
+            echo "  MAVEN_PASSWORD         Sonatype Central Portal token/password"
+            echo "  MAVEN_GPG_PRIVATE_KEY  GPG private key for signing (ASCII-armored)"
             echo "  MAVEN_GPG_PASSPHRASE   GPG passphrase for signing Maven artifacts"
             echo "  NUGET_API_KEY          NuGet API key"
             echo "  GO_REPO_TOKEN          GitHub token for Go module repository"
@@ -244,10 +245,98 @@ publish_python() {
 }
 
 # ==============================================================================
-# Java/Maven Central Publishing
+# Java/Maven Central Publishing (Sonatype Central Portal)
 # ==============================================================================
+
+# Generate checksums for a file (MD5, SHA1, SHA256, SHA512)
+generate_checksums() {
+    local file="$1"
+    
+    if command -v md5sum &> /dev/null; then
+        md5sum "${file}" | awk '{print $1}' > "${file}.md5"
+    elif command -v md5 &> /dev/null; then
+        md5 -q "${file}" > "${file}.md5"
+    fi
+    
+    if command -v sha1sum &> /dev/null; then
+        sha1sum "${file}" | awk '{print $1}' > "${file}.sha1"
+    elif command -v shasum &> /dev/null; then
+        shasum -a 1 "${file}" | awk '{print $1}' > "${file}.sha1"
+    fi
+    
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "${file}" | awk '{print $1}' > "${file}.sha256"
+    elif command -v shasum &> /dev/null; then
+        shasum -a 256 "${file}" | awk '{print $1}' > "${file}.sha256"
+    fi
+    
+    if command -v sha512sum &> /dev/null; then
+        sha512sum "${file}" | awk '{print $1}' > "${file}.sha512"
+    elif command -v shasum &> /dev/null; then
+        shasum -a 512 "${file}" | awk '{print $1}' > "${file}.sha512"
+    fi
+}
+
+# Sign a file with GPG
+sign_file() {
+    local file="$1"
+    local passphrase="${MAVEN_GPG_PASSPHRASE:-}"
+    
+    if [[ -n "${passphrase}" ]]; then
+        echo "${passphrase}" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --armor --detach-sign "${file}"
+    else
+        gpg --batch --yes --armor --detach-sign "${file}"
+    fi
+}
+
+# Import GPG private key if provided via environment variable
+import_gpg_key() {
+    local private_key="${MAVEN_GPG_PRIVATE_KEY:-}"
+    
+    if [[ -z "${private_key}" ]]; then
+        # No key to import, assume key is already in keyring
+        return 0
+    fi
+    
+    log_info "Importing GPG private key from MAVEN_GPG_PRIVATE_KEY..."
+    
+    local passphrase="${MAVEN_GPG_PASSPHRASE:-}"
+    
+    # Create a temporary file for the key
+    local key_file=$(mktemp)
+    echo "${private_key}" > "${key_file}"
+    
+    # Import the key
+    if [[ -n "${passphrase}" ]]; then
+        echo "${passphrase}" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --import "${key_file}" 2>/dev/null
+    else
+        gpg --batch --yes --import "${key_file}" 2>/dev/null
+    fi
+    
+    local import_result=$?
+    
+    # Clean up the temporary file
+    rm -f "${key_file}"
+    
+    if [[ ${import_result} -eq 0 ]]; then
+        log_info "GPG key imported successfully"
+        
+        # Trust the imported key (get the key ID and set trust)
+        local key_id=$(gpg --list-secret-keys --keyid-format LONG 2>/dev/null | grep -oP '(?<=sec\s{3}rsa\d{4}/)[A-F0-9]+' | head -1)
+        if [[ -n "${key_id}" ]]; then
+            echo -e "5\ny\n" | gpg --batch --command-fd 0 --expert --edit-key "${key_id}" trust 2>/dev/null || true
+        fi
+    else
+        log_warning "GPG key import may have failed (key might already exist)"
+    fi
+    
+    return 0
+}
+
 publish_java() {
-    log_info "Publishing Java package to Maven Central..."
+    log_info "Publishing Java package to Maven Central (Sonatype Central Portal)..."
     
     local java_dir="${DIST_DIR}/java"
     if [[ ! -d "${java_dir}" ]]; then
@@ -255,46 +344,209 @@ publish_java() {
         return 1
     fi
     
-    # Find the POM file to get coordinates
-    local pom_file=$(find "${java_dir}" -name "*.pom" | head -1)
-    if [[ -z "${pom_file}" ]]; then
-        log_warning "No POM file found in ${java_dir}"
+    # Check for required tools
+    if ! command -v gpg &> /dev/null; then
+        log_error "GPG is not installed. GPG signing is required for Maven Central."
         return 1
     fi
     
-    log_info "Found POM file: ${pom_file}"
+    if ! command -v curl &> /dev/null; then
+        log_error "curl is not installed. Required for Central Portal API."
+        return 1
+    fi
     
-    # Find the corresponding JAR files
-    local jar_dir=$(dirname "${pom_file}")
-    local main_jar=$(find "${jar_dir}" -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
-    local sources_jar=$(find "${jar_dir}" -name "*-sources.jar" | head -1)
-    local javadoc_jar=$(find "${jar_dir}" -name "*-javadoc.jar" | head -1)
+    # Import GPG key if provided via environment variable
+    import_gpg_key
     
-    log_info "Found main JAR: ${main_jar:-none}"
-    log_info "Found sources JAR: ${sources_jar:-none}"
-    log_info "Found javadoc JAR: ${javadoc_jar:-none}"
+    # Check for credentials
+    local username="${MAVEN_USERNAME:-}"
+    local password="${MAVEN_PASSWORD:-}"
     
-    if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY RUN] Would publish Java artifacts from ${jar_dir}"
-    else
-        # Check if Maven is available
-        if ! command -v mvn &> /dev/null; then
-            log_error "Maven is not installed. Install Maven to publish Java packages."
-            return 1
+    if [[ -z "${username}" ]] || [[ -z "${password}" ]]; then
+        log_error "Sonatype credentials not set. Set MAVEN_USERNAME and MAVEN_PASSWORD"
+        return 1
+    fi
+    
+    # Find all version directories containing artifacts
+    local pom_files=$(find "${java_dir}" -name "*.pom")
+    if [[ -z "${pom_files}" ]]; then
+        log_warning "No POM files found in ${java_dir}"
+        return 1
+    fi
+    
+    # Create a temporary directory for the bundle
+    local bundle_dir=$(mktemp -d)
+    local bundle_zip="${bundle_dir}/bundle.zip"
+    
+    log_info "Creating deployment bundle..."
+    
+    # Process each POM file (there may be multiple for multi-module projects)
+    while IFS= read -r pom_file; do
+        local artifact_dir=$(dirname "${pom_file}")
+        local pom_name=$(basename "${pom_file}")
+        local base_name="${pom_name%.pom}"
+        
+        log_info "Processing: ${pom_file}"
+        
+        # Extract groupId, artifactId, version from POM for directory structure
+        local group_id=$(grep -oPm1 "(?<=<groupId>)[^<]+" "${pom_file}" | head -1)
+        local artifact_id=$(grep -oPm1 "(?<=<artifactId>)[^<]+" "${pom_file}" | head -1)
+        local version=$(grep -oPm1 "(?<=<version>)[^<]+" "${pom_file}" | head -1)
+        
+        if [[ -z "${group_id}" ]] || [[ -z "${artifact_id}" ]] || [[ -z "${version}" ]]; then
+            log_warning "Could not extract Maven coordinates from ${pom_file}"
+            continue
         fi
         
-        # Deploy using Maven deploy:deploy-file
-        # This requires proper Maven settings.xml with server credentials
-        if [[ -n "${main_jar}" ]]; then
-            mvn deploy:deploy-file \
-                -Dfile="${main_jar}" \
-                -DpomFile="${pom_file}" \
-                -DrepositoryId=ossrh \
-                -Durl=https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/ \
-                ${sources_jar:+-Dsources="${sources_jar}"} \
-                ${javadoc_jar:+-Djavadoc="${javadoc_jar}"}
+        log_info "  Group ID: ${group_id}"
+        log_info "  Artifact ID: ${artifact_id}"
+        log_info "  Version: ${version}"
+        
+        # Create the Maven repository structure: groupId/artifactId/version/
+        local group_path="${group_id//./\/}"
+        local target_dir="${bundle_dir}/${group_path}/${artifact_id}/${version}"
+        mkdir -p "${target_dir}"
+        
+        # Find all artifacts for this version
+        local main_jar=$(find "${artifact_dir}" -maxdepth 1 -name "${base_name}.jar" 2>/dev/null | head -1)
+        local sources_jar=$(find "${artifact_dir}" -maxdepth 1 -name "*-sources.jar" 2>/dev/null | head -1)
+        local javadoc_jar=$(find "${artifact_dir}" -maxdepth 1 -name "*-javadoc.jar" 2>/dev/null | head -1)
+        
+        log_info "  Main JAR: ${main_jar:-not found}"
+        log_info "  Sources JAR: ${sources_jar:-not found}"
+        log_info "  Javadoc JAR: ${javadoc_jar:-not found}"
+        
+        # Copy and process POM
+        local target_pom="${target_dir}/${artifact_id}-${version}.pom"
+        cp "${pom_file}" "${target_pom}"
+        log_info "  Signing and checksumming POM..."
+        sign_file "${target_pom}" || { log_error "Failed to sign POM"; rm -rf "${bundle_dir}"; return 1; }
+        generate_checksums "${target_pom}"
+        
+        # Copy and process main JAR
+        if [[ -n "${main_jar}" ]] && [[ -f "${main_jar}" ]]; then
+            local target_jar="${target_dir}/${artifact_id}-${version}.jar"
+            cp "${main_jar}" "${target_jar}"
+            log_info "  Signing and checksumming main JAR..."
+            sign_file "${target_jar}" || { log_error "Failed to sign JAR"; rm -rf "${bundle_dir}"; return 1; }
+            generate_checksums "${target_jar}"
         fi
+        
+        # Copy and process sources JAR
+        if [[ -n "${sources_jar}" ]] && [[ -f "${sources_jar}" ]]; then
+            local target_sources="${target_dir}/${artifact_id}-${version}-sources.jar"
+            cp "${sources_jar}" "${target_sources}"
+            log_info "  Signing and checksumming sources JAR..."
+            sign_file "${target_sources}" || { log_error "Failed to sign sources JAR"; rm -rf "${bundle_dir}"; return 1; }
+            generate_checksums "${target_sources}"
+        fi
+        
+        # Copy and process javadoc JAR
+        if [[ -n "${javadoc_jar}" ]] && [[ -f "${javadoc_jar}" ]]; then
+            local target_javadoc="${target_dir}/${artifact_id}-${version}-javadoc.jar"
+            cp "${javadoc_jar}" "${target_javadoc}"
+            log_info "  Signing and checksumming javadoc JAR..."
+            sign_file "${target_javadoc}" || { log_error "Failed to sign javadoc JAR"; rm -rf "${bundle_dir}"; return 1; }
+            generate_checksums "${target_javadoc}"
+        fi
+        
+    done <<< "${pom_files}"
+    
+    # Create the bundle ZIP (excluding the bundle.zip itself)
+    log_info "Creating bundle ZIP..."
+    (cd "${bundle_dir}" && zip -r "${bundle_zip}" . -x "bundle.zip")
+    
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "[DRY RUN] Would upload bundle to Sonatype Central Portal"
+        log_info "[DRY RUN] Bundle contents:"
+        unzip -l "${bundle_zip}" | head -50
+        rm -rf "${bundle_dir}"
+        return 0
     fi
+    
+    # Upload to Sonatype Central Portal
+    log_info "Uploading bundle to Sonatype Central Portal..."
+    
+    # Create the authorization header (Basic auth with username:password)
+    local auth_token=$(echo -n "${username}:${password}" | base64)
+    
+    # Upload the bundle
+    local upload_response
+    upload_response=$(curl -s -w "\n%{http_code}" \
+        -X POST "https://central.sonatype.com/api/v1/publisher/upload" \
+        -H "Authorization: Bearer ${auth_token}" \
+        -F "bundle=@${bundle_zip}")
+    
+    local http_code=$(echo "${upload_response}" | tail -1)
+    local response_body=$(echo "${upload_response}" | sed '$d')
+    
+    if [[ "${http_code}" != "201" ]] && [[ "${http_code}" != "200" ]]; then
+        log_error "Failed to upload bundle. HTTP ${http_code}"
+        log_error "Response: ${response_body}"
+        rm -rf "${bundle_dir}"
+        return 1
+    fi
+    
+    # Extract deployment ID from response
+    local deployment_id="${response_body}"
+    log_info "Bundle uploaded successfully. Deployment ID: ${deployment_id}"
+    
+    # Check deployment status
+    log_info "Checking deployment status..."
+    local max_attempts=60
+    local attempt=0
+    local status="PENDING"
+    
+    while [[ "${status}" == "PENDING" ]] || [[ "${status}" == "VALIDATING" ]] || [[ "${status}" == "PUBLISHING" ]]; do
+        sleep 5
+        attempt=$((attempt + 1))
+        
+        if [[ ${attempt} -ge ${max_attempts} ]]; then
+            log_warning "Timeout waiting for deployment validation. Check status manually at https://central.sonatype.com"
+            break
+        fi
+        
+        local status_response
+        status_response=$(curl -s \
+            -X POST "https://central.sonatype.com/api/v1/publisher/status?id=${deployment_id}" \
+            -H "Authorization: Bearer ${auth_token}")
+        
+        status=$(echo "${status_response}" | grep -oP '"deploymentState"\s*:\s*"\K[^"]+' || echo "UNKNOWN")
+        log_info "  Status: ${status} (attempt ${attempt}/${max_attempts})"
+    done
+    
+    # Handle final status
+    case "${status}" in
+        "VALIDATED")
+            log_info "Deployment validated. Publishing..."
+            # Publish the deployment
+            local publish_response
+            publish_response=$(curl -s -w "\n%{http_code}" \
+                -X POST "https://central.sonatype.com/api/v1/publisher/deployment/${deployment_id}" \
+                -H "Authorization: Bearer ${auth_token}")
+            
+            local publish_http_code=$(echo "${publish_response}" | tail -1)
+            if [[ "${publish_http_code}" == "204" ]] || [[ "${publish_http_code}" == "200" ]]; then
+                log_success "Deployment published successfully!"
+            else
+                log_warning "Publish request returned HTTP ${publish_http_code}. Check status at https://central.sonatype.com"
+            fi
+            ;;
+        "PUBLISHED")
+            log_success "Deployment already published!"
+            ;;
+        "FAILED")
+            log_error "Deployment validation failed. Check https://central.sonatype.com for details."
+            rm -rf "${bundle_dir}"
+            return 1
+            ;;
+        *)
+            log_warning "Deployment status: ${status}. Check https://central.sonatype.com for details."
+            ;;
+    esac
+    
+    # Cleanup
+    rm -rf "${bundle_dir}"
     
     log_success "Java package published successfully"
 }
@@ -368,7 +620,7 @@ publish_go() {
     log_info "Found Go module at: ${module_dir}"
     
     # Read version from package.json
-    local version=$(node -p "require('${SCRIPT_DIR}/shuttl-lib/package.json').version")
+    local version=$(node -p "require('${SCRIPT_DIR}/package.json').version")
     log_info "Package version: ${version}"
     
     if [[ "${DRY_RUN}" == "true" ]]; then
