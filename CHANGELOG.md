@@ -1,3 +1,13 @@
+## 0.4.3 (2026-01-07)
+
+### 🩹 Fixes
+
+- actually support windows named pipes ([273d054](https://github.com/shuttl-io/shuttl/commit/273d054))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.4.2 (2026-01-07)
 
 This was a version bump only, there were no code changes.
