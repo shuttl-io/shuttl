@@ -14,11 +14,8 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        // Create server
-        var server = new StdInServer();
-        
         // Create app
-        var app = new App("DotNetTestApp", server);
+        var app = new App("DotNetTestApp");
         
         // Create model
         var model = new Model(new ModelProps

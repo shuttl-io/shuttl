@@ -294,7 +294,7 @@ func generateTypeScriptProject(projectDir, projectName string, skipInstall bool)
 	}
 
 	// Create src directory and main.ts
-	mainTS := `import { App, StdInServer, Agent, Model, Secret, Schema } from "@shuttl-io/core";
+	mainTS := `import { App, Agent, Model, Secret, Schema } from "@shuttl-io/core";
 
 // Create a model using OpenAI (you can change this to other providers)
 const model = Model.openAI("gpt-4", Secret.fromEnv("OPENAI_API_KEY"));
@@ -323,8 +323,7 @@ const myAgent = new Agent({
 
 // Main function to start the server
 async function main() {
-  const server = new StdInServer();
-  const app = new App("` + projectName + `", server);
+  const app = new App("` + projectName + `");
   
   app.addAgent(myAgent);
   app.serve();
@@ -440,7 +439,7 @@ packages = ["%s"]
 	// Create main.py
 	mainPy := `"""Main entry point for the Shuttl AI agent."""
 import jsii
-from shuttl.core import App, StdInServer, Agent, Model, Secret
+from shuttl.core import App, Agent, Model, Secret
 from shuttl.core import ITool, ToolArg
 
 
@@ -500,8 +499,7 @@ def create_agent():
 
 def main():
     """Start the Shuttl AI server."""
-    server = StdInServer()
-    app = App("` + projectName + `", server)
+    app = App("` + projectName + `")
     
     app.add_agent(create_agent())
     app.serve()
@@ -659,11 +657,8 @@ import (
 )
 
 func main() {
-	// Create the server
-	server := core.NewStdInServer()
-
 	// Create the app
-	app := core.NewApp(ptr("` + projectName + `"), server)
+	app := core.NewApp(ptr("` + projectName + `"), nil)
 
 	// Create and add the agent
 	agent := createAgent()
@@ -877,11 +872,8 @@ import java.util.Map;
 
 public class Main {
     public static void main(String[] args) {
-        // Create the server
-        StdInServer server = new StdInServer();
-
         // Create the app
-        App app = new App("%s", server);
+        App app = new App("%s");
 
         // Create and add the agent
         Agent agent = createAgent();
@@ -1044,11 +1036,8 @@ class Program
 {
     static void Main(string[] args)
     {
-        // Create the server
-        var server = new StdInServer();
-
         // Create the app
-        var app = new App("%s", server);
+        var app = new App("%s");
 
         // Create and add the agent
         var agent = CreateAgent();

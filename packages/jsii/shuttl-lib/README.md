@@ -74,7 +74,7 @@ In Python, tools must be implemented using the `@jsii.implements()` decorator. *
 
 ```python
 import jsii
-from shuttl.core import App, StdInServer, Agent, Model, Secret
+from shuttl.core import App, Agent, Model, Secret
 from shuttl.core.tools import ITool, ToolArg
 
 
@@ -119,8 +119,7 @@ class WeatherTool:
 
 
 def main():
-    server = StdInServer()
-    app = App("weather-bot", server)
+    app = App("weather-bot")
     
     model = Model.open_ai("gpt-4", Secret.from_env("OPENAI_KEY"))
     agent = Agent(

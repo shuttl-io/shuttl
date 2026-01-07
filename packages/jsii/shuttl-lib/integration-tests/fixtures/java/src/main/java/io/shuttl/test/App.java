@@ -125,11 +125,8 @@ public class App {
     }
     
     public static void main(String[] args) {
-        // Create server
-        StdInServer server = new StdInServer();
-        
         // Create app
-        io.shuttl.module.shuttl.App app = new io.shuttl.module.shuttl.App("JavaTestApp", server);
+        io.shuttl.module.shuttl.App app = new io.shuttl.module.shuttl.App("JavaTestApp");
         
         // Create model
         Model model = Model.builder()

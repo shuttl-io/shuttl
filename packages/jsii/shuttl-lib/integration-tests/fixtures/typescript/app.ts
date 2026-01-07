@@ -5,7 +5,7 @@
  * then starts the StdInServer to accept IPC commands.
  */
 
-import { App, Agent, Model, Toolkit, ITool, ToolArg, StdInServer, Secret, IModelFactory } from "../../../src";
+import { App, Agent, Model, Toolkit, ITool, ToolArg, Secret, IModelFactory } from "../../../src";
 
 // A simple test tool that echoes its input
 class EchoTool implements ITool {
@@ -96,11 +96,8 @@ class AsyncTool implements ITool {
 
 // Create the application
 function main() {
-    // Create server
-    const server = new StdInServer();
-    
     // Create app
-    const app = new App("TypeScriptTestApp", server);
+    const app = new App("TypeScriptTestApp");
     
     // Create model factory
     const modelFactory: IModelFactory = Model.openAI("test-model", Secret.fromEnv("TEST_MODEL_KEY"));
