@@ -1,3 +1,13 @@
+## 0.4.0 (2026-01-07)
+
+### 🚀 Features
+
+- use named pipes over stdin/stdout ([5a791c7](https://github.com/shuttl-io/shuttl/commit/5a791c7))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.2.4 (2026-01-05)
 
 ### 🩹 Fixes
