@@ -6,7 +6,7 @@ import { Agent, AgentStreamer, IAgentStreamerWriter } from "../agent";
 import { FileAttachment, InputContent, isFileAttachmentArray, IModelResponseStream, ModelResponse, ModelResponseStreamValue } from "../models/types";
 import { ITriggerInvoker, SerializedHTTPRequest } from "../trigger/ITrigger";
 import { createReadStream, createWriteStream, existsSync } from "fs";
-import { WriteStream } from "fs";
+import * as net from "net";
 
 /**
  * Request message format from the host CLI
@@ -682,8 +682,28 @@ const SHUTTL_REQUEST_PIPE = "_SHUTTL_REQUEST_PIPE";
 const SHUTTL_RESPONSE_PIPE = "_SHUTTL_RESPONSE_PIPE";
 
 /**
+ * Check if a path is a Windows named pipe path
+ * Windows named pipes have paths like \\.\pipe\name or //./pipe/name
+ */
+function isWindowsNamedPipe(pipePath: string): boolean {
+    return pipePath.startsWith('\\\\.\\pipe\\') || 
+           pipePath.startsWith('//./pipe/') ||
+           pipePath.startsWith('\\\\.\\pipe/');
+}
+
+/**
+ * Writable interface for response output (works with both WriteStream and net.Socket)
+ */
+interface ResponseWriter {
+    write(data: string): boolean;
+    end(): void;
+    destroyed?: boolean;
+}
+
+/**
  * A server that communicates via named pipes (FIFOs).
  * This avoids conflicts with JSII's stdin/stdout usage.
+ * Supports both Unix FIFOs and Windows named pipes.
  * 
  * The CLI creates named pipes and passes paths via environment variables:
  * - _SHUTTL_REQUEST_PIPE: Path to the request pipe (CLI writes, server reads)
@@ -693,8 +713,10 @@ export class NamedPipeServer implements IServer {
     private app?: App;
     private running: boolean = false;
     private rl?: Interface;
-    private responseStream?: WriteStream;
+    private responseStream?: ResponseWriter;
     private keepAliveTimer?: ReturnType<typeof setInterval>;
+    private requestSocket?: net.Socket;
+    private responseSocket?: net.Socket;
 
     public constructor() {}
 
@@ -721,27 +743,58 @@ export class NamedPipeServer implements IServer {
             );
         }
 
-        // Verify pipes exist
-        if (!existsSync(requestPipePath)) {
-            throw new Error(`Request pipe does not exist: ${requestPipePath}`);
-        }
-        if (!existsSync(responsePipePath)) {
-            throw new Error(`Response pipe does not exist: ${responsePipePath}`);
-        }
-
         this.running = true;
 
-        // Open the response pipe for writing
-        this.responseStream = createWriteStream(responsePipePath, { flags: 'a' });
-        
-        // Wait for the response stream to be ready
-        await new Promise<void>((resolve, reject) => {
-            this.responseStream!.on('open', () => resolve());
-            this.responseStream!.on('error', (err) => reject(err));
-        });
+        // Handle Windows named pipes vs Unix FIFOs
+        const isWindows = isWindowsNamedPipe(requestPipePath) || isWindowsNamedPipe(responsePipePath);
 
-        // Open the request pipe for reading
-        const requestStream = createReadStream(requestPipePath);
+        let requestStream: NodeJS.ReadableStream;
+
+        if (isWindows) {
+            // Windows: Use net.connect for named pipes
+            stderr.write(`[NamedPipeServer] Using Windows named pipes\n`);
+            
+            // Connect to response pipe for writing
+            this.responseSocket = await new Promise<net.Socket>((resolve, reject) => {
+                const socket = net.connect(responsePipePath, () => {
+                    resolve(socket);
+                });
+                socket.on('error', reject);
+            });
+            this.responseStream = this.responseSocket;
+
+            // Connect to request pipe for reading
+            this.requestSocket = await new Promise<net.Socket>((resolve, reject) => {
+                const socket = net.connect(requestPipePath, () => {
+                    resolve(socket);
+                });
+                socket.on('error', reject);
+            });
+            requestStream = this.requestSocket;
+        } else {
+            // Unix: Verify pipes exist and use file streams
+            if (!existsSync(requestPipePath)) {
+                throw new Error(`Request pipe does not exist: ${requestPipePath}`);
+            }
+            if (!existsSync(responsePipePath)) {
+                throw new Error(`Response pipe does not exist: ${responsePipePath}`);
+            }
+
+            stderr.write(`[NamedPipeServer] Using Unix FIFOs\n`);
+
+            // Open the response pipe for writing
+            const responseFileStream = createWriteStream(responsePipePath, { flags: 'a' });
+            this.responseStream = responseFileStream;
+            
+            // Wait for the response stream to be ready
+            await new Promise<void>((resolve, reject) => {
+                responseFileStream.on('open', () => resolve());
+                responseFileStream.on('error', (err) => reject(err));
+            });
+
+            // Open the request pipe for reading
+            requestStream = createReadStream(requestPipePath);
+        }
 
         // Create readline interface for line-by-line processing
         this.rl = createInterface({
@@ -762,7 +815,7 @@ export class NamedPipeServer implements IServer {
         });
 
         // Handle errors
-        requestStream.on("error", (err) => {
+        requestStream.on("error", (err: Error) => {
             stderr.write(`[NamedPipeServer] Request pipe error: ${err.message}\n`);
             this.running = false;
         });
@@ -809,6 +862,15 @@ export class NamedPipeServer implements IServer {
         }
         if (this.responseStream) {
             this.responseStream.end();
+        }
+        // Close socket connections (Windows)
+        if (this.requestSocket) {
+            this.requestSocket.destroy();
+            this.requestSocket = undefined;
+        }
+        if (this.responseSocket) {
+            this.responseSocket.destroy();
+            this.responseSocket = undefined;
         }
         if (this.keepAliveTimer) {
             clearInterval(this.keepAliveTimer);
@@ -1346,7 +1408,7 @@ export class NamedPipeServer implements IServer {
  * Writer that outputs to a named pipe instead of stdout
  */
 class NamedPipeWriter implements IAgentStreamerWriter {
-    constructor(private readonly responseStream: WriteStream) {}
+    constructor(private readonly responseStream: ResponseWriter) {}
 
     write(value: string): void {
         if (this.responseStream && !this.responseStream.destroyed) {
@@ -1361,7 +1423,7 @@ class NamedPipeWriter implements IAgentStreamerWriter {
 function createNamedPipeAgentStreamer(
     agent: Agent,
     requestId: string,
-    responseStream: WriteStream,
+    responseStream: ResponseWriter,
     customWriter?: IAgentStreamerWriter
 ): AgentStreamer {
     const writer = customWriter ?? new NamedPipeWriter(responseStream);
@@ -1378,7 +1440,7 @@ class NamedPipeTriggerInvoker implements ITriggerInvoker {
     constructor(
         private readonly agent: Agent,
         private readonly requestId: string,
-        private readonly responseStream: WriteStream,
+        private readonly responseStream: ResponseWriter,
         private readonly threadId?: string,
     ) {
         this.currentThreadId = threadId;
