@@ -1,6 +1,6 @@
 {
   "name": "@shuttl-io/core",
-  "version": "0.4.7",
+  "version": "0.1.5",
   "description": "The JSII library for Shuttl AI models",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -49,10 +49,10 @@
     "outdir": "dist-jsii",
     "targets": {
       "java": {
-        "package": "io_.shuttl.module.core",
+        "package": "io.shuttl.core",
         "maven": {
-          "groupId": "io_.shuttl.module",
-          "artifactId": "core"
+          "groupId": "io.shuttl.core",
+          "artifactId": "shuttl-core"
         }
       },
       "python": {
