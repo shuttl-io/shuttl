@@ -264,7 +264,7 @@ Use the **Agent Debug** screen to see the full tool call flow and LLM responses 
 
     Understand Agents, Tools, Triggers, and Outcomes.
 
-    [:octicons-arrow-right-24: Core Concepts](../concepts/index.md)
+    [:arrow_right: Core Concepts](../concepts/index.md)
 
 -   **:wrench: Build More Tools**
 
@@ -272,7 +272,7 @@ Use the **Agent Debug** screen to see the full tool call flow and LLM responses 
 
     Create powerful tools that connect to APIs and databases.
 
-    [:octicons-arrow-right-24: Tools Guide](../concepts/tools.md)
+    [:arrow_right: Tools Guide](../concepts/tools.md)
 
 -   **:clock: Add Triggers**
 
@@ -280,7 +280,7 @@ Use the **Agent Debug** screen to see the full tool call flow and LLM responses 
 
     Schedule your agent or connect it to webhooks.
 
-    [:octicons-arrow-right-24: Triggers](../concepts/triggers.md)
+    [:arrow_right: Triggers](../concepts/triggers.md)
 
 -   **:rocket: Deploy to Production**
 
@@ -288,7 +288,7 @@ Use the **Agent Debug** screen to see the full tool call flow and LLM responses 
 
     Ship your agent to the cloud.
 
-    [:octicons-arrow-right-24: Deployment Guide](installation.md)
+    [:arrow_right: Deployment Guide](installation.md)
 
 </div>
 

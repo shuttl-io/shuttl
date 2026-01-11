@@ -378,7 +378,7 @@ execute: async ({ query }) => {
 
     Learn advanced agent patterns and best practices.
 
-    [:octicons-arrow-right-24: Agents Guide](../concepts/agents.md)
+    [:arrow_right: Agents Guide](../concepts/agents.md)
 
 -   **:wrench: Master Tools**
 
@@ -386,7 +386,7 @@ execute: async ({ query }) => {
 
     Build powerful tools and toolkits.
 
-    [:octicons-arrow-right-24: Tools Guide](../concepts/tools.md)
+    [:arrow_right: Tools Guide](../concepts/tools.md)
 
 -   **:zap: Add Triggers**
 
@@ -394,7 +394,7 @@ execute: async ({ query }) => {
 
     Connect your agent to schedules and events.
 
-    [:octicons-arrow-right-24: Triggers Guide](../concepts/triggers.md)
+    [:arrow_right: Triggers Guide](../concepts/triggers.md)
 
 </div>
 

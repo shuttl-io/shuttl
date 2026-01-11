@@ -17,13 +17,17 @@ const (
 
 // UserConfig represents the global user configuration stored in ~/.config/shuttl/config.jsonc
 type UserConfig struct {
-	APIURL string `json:"api_url"`
+	APIURL             string `json:"api_url"`
+	LastVersionCheck   int64  `json:"last_version_check,omitempty"`
+	LatestVersion      string `json:"latest_version,omitempty"`
+	RevokedVersions    []string `json:"revoked_versions,omitempty"`
 }
 
 // DefaultUserConfig returns a UserConfig with default values
 func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
-		APIURL: DefaultAPIURL,
+		APIURL:          DefaultAPIURL,
+		RevokedVersions: []string{},
 	}
 }
 
@@ -99,9 +103,18 @@ func SaveUserConfig(config *UserConfig) error {
 	content := fmt.Sprintf(`{
   // Shuttl CLI Configuration
   // API URL for the Shuttl dashboard
-  "api_url": %q
+  "api_url": %q,
+  "last_version_check": %d,
+  "latest_version": %q,
+  "revoked_versions": %s
 }
-`, config.APIURL)
+`, config.APIURL, config.LastVersionCheck, config.LatestVersion, func() string {
+		if config.RevokedVersions == nil {
+			return "[]"
+		}
+		b, _ := json.Marshal(config.RevokedVersions)
+		return string(b)
+	}())
 
 	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write user config file: %w", err)

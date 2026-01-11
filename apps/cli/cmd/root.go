@@ -24,6 +24,12 @@ Use this tool to:
 		} else {
 			log.Default.SetLevel(log.LogLevelInfo)
 		}
+
+		// Check for updates and revoked versions
+		// Don't check for help or version commands to avoid clutter
+		if cmd.Name() != "help" || cmd.Name() != "update" {
+			CheckForUpdates()
+		}
 	},
 }
 

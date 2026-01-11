@@ -40,7 +40,7 @@ Shuttl is built around four composable primitives that work together to create p
 
     The core unit of intelligence. An agent combines a language model with a system prompt and tools to perform tasks.
 
-    [:octicons-arrow-right-24: Learn more](agents.md)
+    [:arrow_right: Learn more](agents.md)
 
 -   :wrench: **Tools & Toolkits**
 
@@ -48,7 +48,7 @@ Shuttl is built around four composable primitives that work together to create p
 
     Give agents the ability to take actions: search databases, call APIs, process data, and more.
 
-    [:octicons-arrow-right-24: Learn more](tools.md)
+    [:arrow_right: Learn more](tools.md)
 
 -   :zap: **Triggers**
 
@@ -56,7 +56,7 @@ Shuttl is built around four composable primitives that work together to create p
 
     Define how and when agents are activated: HTTP requests, schedules, emails, file changes.
 
-    [:octicons-arrow-right-24: Learn more](triggers.md)
+    [:arrow_right: Learn more](triggers.md)
 
 -   :outbox_tray: **Outcomes**
 
@@ -64,7 +64,7 @@ Shuttl is built around four composable primitives that work together to create p
 
     Route agent responses to destinations: stream to users, post to Slack, call webhooks.
 
-    [:octicons-arrow-right-24: Learn more](outcomes.md)
+    [:arrow_right: Learn more](outcomes.md)
 
 </div>
 

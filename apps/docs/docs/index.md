@@ -14,7 +14,7 @@ Shuttl is a developer-first framework for building, deploying, and managing AI a
 
     Install the CLI, define your agent, and deploy. It's that simple.
 
-    [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
+    [:arrow_right: Quick Start](getting-started/quickstart.md)
 
 -   :brain: **Powerful Agent Primitives**
 
@@ -22,7 +22,7 @@ Shuttl is a developer-first framework for building, deploying, and managing AI a
 
     Agents, Tools, Triggers, and Outcomes—composable building blocks for any AI workflow.
 
-    [:octicons-arrow-right-24: Core Concepts](concepts/index.md)
+    [:arrow_right: Core Concepts](concepts/index.md)
 
 -   :wrench: **Batteries Included**
 
@@ -30,7 +30,7 @@ Shuttl is a developer-first framework for building, deploying, and managing AI a
 
     Built-in support for OpenAI, scheduled tasks, webhooks, and more. Extend with custom tools.
 
-    [:octicons-arrow-right-24: Examples](examples/index.md)
+    [:arrow_right: Examples](examples/index.md)
 
 -   :terminal: **Developer Experience First**
 
@@ -38,7 +38,7 @@ Shuttl is a developer-first framework for building, deploying, and managing AI a
 
     Hot reload, streaming responses, and a TUI for real-time debugging. Build with confidence.
 
-    [:octicons-arrow-right-24: CLI Reference](cli/index.md)
+    [:arrow_right: CLI Reference](cli/index.md)
 
 </div>
 

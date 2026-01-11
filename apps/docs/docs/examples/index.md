@@ -77,7 +77,7 @@ export const dailyDigest = new Agent({
 
     A conversational weather bot with API integration.
 
-    [:octicons-arrow-right-24: View example](weather-agent.md)
+    [:arrow_right: View example](weather-agent.md)
 
 -   :clock: **Scheduled Tasks**
 
@@ -85,7 +85,7 @@ export const dailyDigest = new Agent({
 
     Background agents that run on a schedule.
 
-    [:octicons-arrow-right-24: View example](scheduled-tasks.md)
+    [:arrow_right: View example](scheduled-tasks.md)
 
 </div>
 
