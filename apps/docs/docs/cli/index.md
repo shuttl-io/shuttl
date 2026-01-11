@@ -9,7 +9,7 @@ The Shuttl CLI provides tools for developing, testing, and deploying AI agents.
 ### Quick Install
 
 ```bash
-curl -fsSL https://shuttl.dev/install.sh | bash
+curl -fsSL https://shuttl.io/install.sh | bash
 ```
 
 ### Manual Download

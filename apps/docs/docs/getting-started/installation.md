@@ -72,7 +72,7 @@ The Shuttl CLI is a standalone binary that works on macOS, Linux, and Windows.
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://shuttl.dev/install.sh | bash
+curl -fsSL https://shuttl.io/install.sh | bash
 ```
 
 This script automatically:

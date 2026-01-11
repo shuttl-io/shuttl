@@ -52,7 +52,7 @@ The Shuttl CLI provides development tools and deployment capabilities.
 
 ```bash
 # Download for your platform
-curl -fsSL https://shuttl.dev/install.sh | bash
+curl -fsSL https://shuttl.io/install.sh | bash
 
 # Verify installation
 shuttl version

@@ -316,7 +316,7 @@ COPY dist/ ./dist/
 COPY shuttl.json ./
 
 # Install Shuttl CLI
-RUN curl -fsSL https://shuttl.dev/install.sh | bash
+RUN curl -fsSL https://shuttl.io/install.sh | bash
 
 EXPOSE 8080
 
@@ -372,5 +372,6 @@ Use this for:
 - [:book: CLI Commands](../cli/commands.md) - Full command reference
 - [:zap: Triggers](../concepts/triggers.md) - Configure triggers for deployment
 - [:outbox_tray: Outcomes](../concepts/outcomes.md) - Route outputs in production
+
 
 

@@ -149,7 +149,7 @@ Install the CLI:
 
 ```bash
 # Download the latest release
-curl -fsSL https://shuttl.dev/install.sh | bash
+curl -fsSL https://shuttl.io/install.sh | bash
 
 # Or build from source
 git clone https://github.com/shuttl-io/shuttl
