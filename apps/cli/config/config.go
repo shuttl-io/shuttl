@@ -11,8 +11,10 @@ const ConfigFileName = "shuttl.json"
 
 // Config represents the structure of shuttl.json
 type Config struct {
-	App            string `json:"app"`
-	OrganizationID *int   `json:"organization_id"`
+	App            string   `json:"app"`
+	OrganizationID *int     `json:"organization_id"`
+	BuildCommands  []string `json:"buildCommands,omitempty"`
+	Language       string   `json:"language,omitempty"`
 }
 
 // LoadConfig looks for shuttl.json in the current directory and parent directories

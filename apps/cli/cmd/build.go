@@ -15,15 +15,17 @@ import (
 
 // Manifest represents the complete manifest structure
 type Manifest struct {
-	Version   string               `json:"version"`
-	BuildTime string               `json:"buildTime"`
-	App       string               `json:"app"`
-	Agents    []ipc.AgentInfo      `json:"agents"`
-	Toolkits  []ipc.ToolkitInfo    `json:"toolkits"`
-	Tools     []ipc.SingleToolInfo `json:"tools"`
-	Triggers  []ipc.TriggerInfo    `json:"triggers"`
-	Models    []ipc.ModelInfo      `json:"models"`
-	Prompts   []ipc.PromptInfo     `json:"prompts"`
+	Version       string               `json:"version"`
+	BuildTime     string               `json:"buildTime"`
+	App           string               `json:"app"`
+	Language      string               `json:"language,omitempty"`
+	BuildCommands []string             `json:"buildCommands,omitempty"`
+	Agents        []ipc.AgentInfo      `json:"agents"`
+	Toolkits      []ipc.ToolkitInfo    `json:"toolkits"`
+	Tools         []ipc.SingleToolInfo `json:"tools"`
+	Triggers      []ipc.TriggerInfo    `json:"triggers"`
+	Models        []ipc.ModelInfo      `json:"models"`
+	Prompts       []ipc.PromptInfo     `json:"prompts"`
 }
 
 var buildCmd = &cobra.Command{
@@ -48,31 +50,40 @@ Examples:
 func init() {
 	buildCmd.Flags().String("config", "", "Path to shuttl.json (defaults to searching current and parent directories)")
 	buildCmd.Flags().StringP("output", "o", "shuttl-manifest.json", "Output file path for the manifest")
+	buildCmd.Flags().Bool("no-zip", false, "Skip creating tar.gz bundles for .shuttl_build outputs")
 	rootCmd.AddCommand(buildCmd)
 }
 
 func runBuild(cmd *cobra.Command, args []string) {
 	configPath, _ := cmd.Flags().GetString("config")
 	outputPath, _ := cmd.Flags().GetString("output")
+	noZip, _ := cmd.Flags().GetBool("no-zip")
 
 	var appPath string
+	var cfg *config.Config
+	var configDir string
+	var err error
 
 	// If app is provided as argument, use it directly
 	if len(args) > 0 {
 		appPath = args[0]
 	} else {
 		// Try to load configuration
-		var cfg *config.Config
-		var err error
-
 		if configPath != "" {
 			cfg, err = config.LoadConfigFromPath(configPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 				os.Exit(1)
 			}
+			configDir = config.GetConfigDir(configPath)
 		} else {
-			cfg, _ = config.LoadConfig()
+			cfg, err = config.LoadConfig()
+			if err == nil {
+				configPath, err = config.FindConfigFileFrom(".")
+				if err == nil {
+					configDir = config.GetConfigDir(configPath)
+				}
+			}
 			// Config file is optional
 		}
 
@@ -84,6 +95,15 @@ func runBuild(cmd *cobra.Command, args []string) {
 	if appPath == "" {
 		fmt.Fprintf(os.Stderr, "❌ Error: no app specified. Provide an app path as argument or create a shuttl.json config file.\n")
 		os.Exit(1)
+	}
+
+	if configDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Error: failed to determine working directory: %v\n", err)
+			os.Exit(1)
+		}
+		configDir = cwd
 	}
 
 	fmt.Printf("🔧 Building manifest for: %s\n", appPath)
@@ -161,15 +181,17 @@ func runBuild(cmd *cobra.Command, args []string) {
 
 	// Build manifest
 	manifest := Manifest{
-		Version:   "1.0",
-		BuildTime: time.Now().UTC().Format(time.RFC3339),
-		App:       appPath,
-		Agents:    agents,
-		Toolkits:  toolkits,
-		Tools:     tools,
-		Triggers:  triggers,
-		Models:    models,
-		Prompts:   prompts,
+		Version:       "1.0",
+		BuildTime:     time.Now().UTC().Format(time.RFC3339),
+		App:           appPath,
+		Language:      resolveLanguage(appPath, cfg),
+		BuildCommands: resolveBuildCommands(cfg),
+		Agents:        agents,
+		Toolkits:      toolkits,
+		Tools:         tools,
+		Triggers:      triggers,
+		Models:        models,
+		Prompts:       prompts,
 	}
 
 	// Marshal to JSON with indentation
@@ -191,4 +213,9 @@ func runBuild(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("✅ Manifest written to: %s\n", absPath)
+
+	if err := writeBuildOutput(configDir, manifest, jsonData, noZip); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error writing .shuttl_build output: %v\n", err)
+		os.Exit(1)
+	}
 }
