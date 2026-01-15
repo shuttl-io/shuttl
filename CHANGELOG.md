@@ -1,3 +1,14 @@
+## 0.4.9 (2026-01-15)
+
+### 🚀 Features
+
+- get the landing pages directory all set up again ([37e040a](https://github.com/shuttl-io/shuttl/commit/37e040a))
+- adds the autoupdate command to the script ([e24541a](https://github.com/shuttl-io/shuttl/commit/e24541a))
+
+### ❤️ Thank You
+
+- Yoseph Radding @radding
+
 ## 0.4.8 (2026-01-07)
 
 ### 🩹 Fixes
