@@ -99,6 +99,7 @@ export class StdInServer implements IServer {
                 name: this.app.name,
                 protocol: "ndjson",
                 version: "1.0",
+                shuttl_version: require("../../package.json").version,
             },
         });
 
@@ -827,8 +828,8 @@ export class NamedPipeServer implements IServer {
             result: {
                 name: this.app.name,
                 protocol: "ndjson",
-                version: "1.0",
                 transport: "named_pipe",
+                version: require("../../package.json").version,
             },
         });
 

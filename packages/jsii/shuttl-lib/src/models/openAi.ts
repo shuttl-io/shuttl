@@ -99,27 +99,29 @@ export class OpenAI implements IModel {
         }
         // this.inputs.push(...prompt);
         const stream = true;
-        const tools = this.tools?.map(tool => ({
-            type: "function",
-            name: tool.name,
-            description: tool.description,
-            parameters: {
-                type: "object",
-                properties: Object.entries(tool.schema?.properties ?? {}).reduce((acc, [name, arg]) => {
-                    const property: Record<string, any> = {
-                        type: arg.argType,
-                        description: arg.description,
-                        default: arg.defaultValue,
-                    };
-                    if (arg.enumValues) {
-                        property.enum = arg.enumValues;
-                    }
-                    acc[name] = property;
-                    return acc;
-                }, {} as Record<string, any>),
-                required: Object.entries(tool.schema?.properties ?? {}).filter(([_, arg]) => arg.required).map(([name]) => name),
-            }
-        }));
+        // throw new Error("I WANT TO DIE HERE: " + JSON.stringify(this.tools))
+        const tools: any[] = [];
+        // const tools = this.tools?.map(tool => ({
+        //     type: "function",
+        //     name: tool.name,
+        //     description: tool.description,
+        //     parameters: {
+        //         type: "object",
+        //         properties: Object.entries(tool.schema?.properties ?? {}).reduce((acc, [name, arg]) => {
+        //             const property: Record<string, any> = {
+        //                 type: arg.argType,
+        //                 description: arg.description,
+        //                 default: arg.defaultValue,
+        //             };
+        //             if (arg.enumValues) {
+        //                 property.enum = arg.enumValues;
+        //             }
+        //             acc[name] = property;
+        //             return acc;
+        //         }, {} as Record<string, any>),
+        //         required: Object.entries(tool.schema?.properties ?? {}).filter(([_, arg]) => arg.required).map(([name]) => name),
+        //     }
+        // }));
         const body = {
                 model: this.identifier,
                 conversation: this.threadId,
@@ -162,7 +164,7 @@ export class OpenAI implements IModel {
                     if (!result) {
                         break;
                     }
-                    const { done, value } = result;
+                    const { done, value } = result as any;
                     if (done) {
                         streamer.recieve(this, {
                             eventName: "overall.completed",
@@ -187,8 +189,8 @@ export class OpenAI implements IModel {
                         }
                         
                         // Raw data is a string in the format of `event: <event_name>\ndata: <event_data>`
-                        const eventMatch = rawMessage.match(/^event: (.+)$/m);
-                        const dataMatch = rawMessage.match(/^data: (.+)$/m);
+                        const eventMatch = rawMessage.match(/^event: (.+)$/m) as any;
+                        const dataMatch = rawMessage.match(/^data: (.+)$/m) as any;
                         
                         if (eventMatch && dataMatch) {
                             const eventName = eventMatch[1];
