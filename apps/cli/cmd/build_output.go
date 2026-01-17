@@ -93,6 +93,7 @@ func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte
 		}
 	}
 
+	assetManifest := make(map[string]string)
 	for _, trigger := range triggers {
 		agentDir := sanitizeDir(trigger.AgentName)
 		triggerDir := sanitizeDir(trigger.Name)
@@ -134,10 +135,38 @@ func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte
 			if err := createTarGz(destRoot, tarPath); err != nil {
 				return err
 			}
+			relPath, err := filepath.Rel(outputRoot, tarPath)
+			if err != nil {
+				return err
+			}
+			if shouldSelectAsset(assetManifest, trigger) {
+				assetManifest[trigger.AgentName] = filepath.ToSlash(relPath)
+			}
+		}
+	}
+
+	if !noZip && len(assetManifest) > 0 {
+		if err := writeAssetManifest(outputRoot, assetManifest); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func shouldSelectAsset(existing map[string]string, trigger ipc.TriggerInfo) bool {
+	if _, ok := existing[trigger.AgentName]; !ok {
+		return true
+	}
+	return strings.EqualFold(trigger.Name, "api")
+}
+
+func writeAssetManifest(outputRoot string, assets map[string]string) error {
+	data, err := json.MarshalIndent(assets, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(outputRoot, "asset-manifest.json"), data, 0644)
 }
 
 func createTarGz(sourceDir, tarPath string) error {
@@ -227,6 +256,7 @@ func manifestForTrigger(manifest Manifest, trigger ipc.TriggerInfo) (Manifest, e
 		}
 	}
 	return Manifest{
+		Name:          manifest.Name,
 		Version:       manifest.Version,
 		BuildTime:     manifest.BuildTime,
 		App:           manifest.App,

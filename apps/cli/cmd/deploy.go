@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +39,11 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "❌ Error: not logged in - run 'shuttl login' first\n")
 		os.Exit(1)
 	}
+	tokens, err := auth.LoadTokens()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error: failed to load auth tokens: %v\n", err)
+		os.Exit(1)
+	}
 
 	configPath, _ := cmd.Flags().GetString("config")
 	architecture, _ := cmd.Flags().GetString("architecture")
@@ -53,13 +60,13 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	archives, err := findBuildArchives(configDir)
+	assets, err := loadAssetManifest(configDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error finding build archives: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Error loading asset manifest: %v\n", err)
 		os.Exit(1)
 	}
-	if len(archives) == 0 {
-		fmt.Fprintf(os.Stderr, "❌ Error: no build archives found in %s\n", filepath.Join(configDir, buildOutputDirName))
+	if len(assets) == 0 {
+		fmt.Fprintf(os.Stderr, "❌ Error: no assets found in %s\n", filepath.Join(configDir, buildOutputDirName))
 		os.Exit(1)
 	}
 
@@ -69,8 +76,8 @@ func runDeploy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("🚀 Uploading %d build archive(s) to %s\n", len(archives), buildURL)
-	if err := uploadArchives(cmd.Context(), buildURL, archives); err != nil {
+	fmt.Printf("🚀 Uploading %d build archive(s) to %s\n", len(assets), buildURL)
+	if err := uploadAssets(cmd.Context(), buildURL, configDir, assets, tokens.AccessToken); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error uploading archives: %v\n", err)
 		os.Exit(1)
 	}
@@ -114,25 +121,17 @@ func runBuildCommand(configPath string, architecture string) error {
 	return cmd.Run()
 }
 
-func findBuildArchives(projectRoot string) ([]string, error) {
-	root := filepath.Join(projectRoot, buildOutputDirName)
-	var archives []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(path, ".tar.gz") {
-			archives = append(archives, path)
-		}
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
+func loadAssetManifest(projectRoot string) (map[string]string, error) {
+	path := filepath.Join(projectRoot, buildOutputDirName, "asset-manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return nil, err
 	}
-	return archives, nil
+	var assets map[string]string
+	if err := json.Unmarshal(data, &assets); err != nil {
+		return nil, err
+	}
+	return assets, nil
 }
 
 func resolveBuildURL(override string) (string, error) {
@@ -146,18 +145,20 @@ func resolveBuildURL(override string) (string, error) {
 	return strings.TrimRight(userCfg.GetBuildURL(), "/"), nil
 }
 
-func uploadArchives(ctx context.Context, baseURL string, archives []string) error {
+func uploadAssets(ctx context.Context, baseURL string, projectRoot string, assets map[string]string, accessToken string) error {
 	client := &http.Client{Timeout: 15 * time.Minute}
 	endpoint := strings.TrimRight(baseURL, "/") + "/build"
-	for _, archive := range archives {
-		if err := uploadArchive(ctx, client, endpoint, archive); err != nil {
+	for agent, relPath := range assets {
+		fmt.Printf("Deploying %s\n", agent)
+		archive := filepath.Join(projectRoot, buildOutputDirName, filepath.FromSlash(relPath))
+		if err := uploadArchive(ctx, client, endpoint, archive, accessToken); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func uploadArchive(ctx context.Context, client *http.Client, endpoint string, archivePath string) error {
+func uploadArchive(ctx context.Context, client *http.Client, endpoint string, archivePath string, accessToken string) error {
 	file, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -170,6 +171,7 @@ func uploadArchive(ctx context.Context, client *http.Client, endpoint string, ar
 	}
 	req.Header.Set("Content-Type", "application/gzip")
 	req.Header.Set("X-Shuttl-Archive", filepath.Base(archivePath))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -177,10 +179,107 @@ func uploadArchive(ctx context.Context, client *http.Client, endpoint string, ar
 	}
 	defer resp.Body.Close()
 
+	if isStreamingResponse(resp.Header.Get("Content-Type")) {
+		if err := streamResponse(resp.Body, filepath.Base(archivePath)); err != nil {
+			return err
+		}
+		fmt.Printf("✅ Uploaded %s\n", filepath.Base(archivePath))
+		return nil
+	}
+
 	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("body: %s\n", string(body))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("upload failed for %s: %s", filepath.Base(archivePath), strings.TrimSpace(string(body)))
 	}
+	if len(body) > 0 {
+		fmt.Println(strings.TrimSpace(string(body)))
+		return nil
+	}
 	fmt.Printf("✅ Uploaded %s\n", filepath.Base(archivePath))
 	return nil
+}
+
+func isStreamingResponse(contentType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return normalized == "text/event-stream" || normalized == "test/event-stream"
+}
+
+func streamResponse(body io.Reader, label string) error {
+	stopSpinner := make(chan struct{})
+	go spinner(stopSpinner, fmt.Sprintf("Uploading %s", label))
+
+	defer close(stopSpinner)
+
+	scanner := bufio.NewScanner(body)
+	var lastEvent string
+	var deployFailed bool
+	var deployError string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			lastEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			printStreamMessage(lastEvent, data)
+			if strings.EqualFold(lastEvent, "error") {
+				deployFailed = true
+				deployError = data
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if deployFailed {
+		if deployError == "" {
+			return fmt.Errorf("deploy failed")
+		}
+		return fmt.Errorf("deploy failed: %s", deployError)
+	}
+	return nil
+}
+
+type StreamMessage struct {
+	Message *string            `json:"message"`
+	Fields  *map[string]string `json:"fields"`
+	Error   *string            `json:"error"`
+}
+
+func printStreamMessage(event, data string) {
+	// Clear spinner line
+	// fmt.Print("\r")
+	var message StreamMessage
+	if err := json.Unmarshal([]byte(data), &message); err != nil {
+		fmt.Printf("error unmarshalling stream message: %v\n", err)
+		return
+	}
+	if message.Message != nil {
+		fmt.Printf("%s\n", *message.Message)
+	}
+	if message.Error != nil {
+		fmt.Printf("❌ Error: %s\n", *message.Error)
+	}
+}
+
+func spinner(stop <-chan struct{}, prefix string) {
+	frames := []rune{'|', '/', '-', '\\'}
+	ticker := time.NewTicker(120 * time.Millisecond)
+	defer ticker.Stop()
+	index := 0
+	for {
+		select {
+		case <-stop:
+			fmt.Print("\r")
+			return
+		case <-ticker.C:
+			fmt.Printf("\r%s %c", prefix, frames[index%len(frames)])
+			index++
+		}
+	}
 }

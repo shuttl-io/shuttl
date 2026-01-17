@@ -30,6 +30,7 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 	}
 
 	manifest := Manifest{
+		Name:          "TestProject",
 		Version:       "1.0",
 		BuildTime:     "now",
 		App:           "node ./main.ts",
@@ -103,6 +104,9 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 	if len(filtered.Agents) != 1 || filtered.Agents[0].Name != "AgentA" {
 		t.Fatalf("expected filtered agent AgentA, got %+v", filtered.Agents)
 	}
+	if filtered.Name != "TestProject" {
+		t.Fatalf("expected filtered manifest name TestProject, got %s", filtered.Name)
+	}
 	if len(filtered.Triggers) != 1 || filtered.Triggers[0].Name != "api" {
 		t.Fatalf("expected filtered trigger api, got %+v", filtered.Triggers)
 	}
@@ -126,6 +130,19 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 	}
 	if !entries["main.ts"] || !entries["Dockerfile"] || !entries["shuttl-manifest.json"] {
 		t.Fatalf("expected tar entries for main.ts, Dockerfile, shuttl-manifest.json, got %+v", entries)
+	}
+
+	assetManifestPath := filepath.Join(outputRoot, "asset-manifest.json")
+	assetBytes, err := os.ReadFile(assetManifestPath)
+	if err != nil {
+		t.Fatalf("read asset manifest: %v", err)
+	}
+	var assets map[string]string
+	if err := json.Unmarshal(assetBytes, &assets); err != nil {
+		t.Fatalf("unmarshal asset manifest: %v", err)
+	}
+	if assets["AgentA"] != "AgentA/api.tar.gz" {
+		t.Fatalf("expected asset manifest for AgentA, got %v", assets["AgentA"])
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 
 // Manifest represents the complete manifest structure
 type Manifest struct {
+	Name          string               `json:"name"`
 	Version       string               `json:"version"`
 	BuildTime     string               `json:"buildTime"`
 	App           string               `json:"app"`
@@ -188,6 +189,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 
 	// Build manifest
 	manifest := Manifest{
+		Name:          filepath.Base(configDir),
 		Version:       "1.0",
 		BuildTime:     time.Now().UTC().Format(time.RFC3339),
 		App:           appPath,
