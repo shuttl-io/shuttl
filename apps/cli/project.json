@@ -14,7 +14,19 @@
         "cwd": "{projectRoot}"
       },
       "dependsOn": [
-        "build:all"
+        "build:all",
+        "build:docker"
+      ]
+    },
+    "build:docker": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "SHUTTL_BASE_PUSH=true ./scripts/build_base_images.sh",
+        "cwd": "{projectRoot}"
+      },
+      "dependsOn": [
+        "build:linux-amd64",
+        "build:linux-arm64"
       ]
     },
     "build": {

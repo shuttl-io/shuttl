@@ -68,6 +68,21 @@ Run the app defined in `shuttl.json` in development mode:
 nx run cli:build
 ```
 
+### Base Docker Images
+
+Base images are generated per language and architecture. They copy the CLI
+binary from `dist/` and set `shuttl` as the entrypoint.
+
+```bash
+./scripts/build_base_images.sh
+```
+
+Environment variables:
+
+- `SHUTTL_BASE_REGISTRY` (default: `shuttl`)
+- `SHUTTL_BASE_TAG` (default: `latest`)
+- `SHUTTL_BASE_PUSH` (default: `false`)
+
 ### Run Tests
 
 ```bash

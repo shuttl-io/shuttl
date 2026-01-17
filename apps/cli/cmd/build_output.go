@@ -67,7 +67,7 @@ func inferLanguageFromApp(appPath string) string {
 	return ""
 }
 
-func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte, noZip bool) error {
+func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte, noZip bool, architecture string) error {
 	outputRoot := filepath.Join(projectRoot, buildOutputDirName)
 	if err := os.RemoveAll(outputRoot); err != nil {
 		return err
@@ -77,11 +77,6 @@ func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte
 	}
 
 	includedFiles, err := collectIncludedFiles(projectRoot, outputRoot)
-	if err != nil {
-		return err
-	}
-
-	dockerfileContent, err := dockerfileForBuild(projectRoot, manifest.BuildCommands)
 	if err != nil {
 		return err
 	}
@@ -108,6 +103,10 @@ func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte
 		if err := os.MkdirAll(destRoot, 0755); err != nil {
 			return err
 		}
+		dockerfileContent, err := dockerfileForBuild(projectRoot, manifest.BuildCommands, manifest.Language, architecture, trigger.AgentName, trigger.Name)
+		if err != nil {
+			return err
+		}
 		filtered, err := manifestForTrigger(manifest, trigger)
 		if err != nil {
 			return err
@@ -123,7 +122,7 @@ func writeBuildOutput(projectRoot string, manifest Manifest, manifestJSON []byte
 				return err
 			}
 		}
-		if err := os.WriteFile(filepath.Join(destRoot, "DOCKERFILE"), []byte(dockerfileContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(destRoot, "Dockerfile"), []byte(dockerfileContent), 0644); err != nil {
 			return err
 		}
 		if err := os.WriteFile(filepath.Join(destRoot, "shuttl-manifest.json"), filteredJSON, 0644); err != nil {
@@ -313,22 +312,31 @@ func collectIncludedFiles(projectRoot, outputRoot string) ([]string, error) {
 	return files, nil
 }
 
-func dockerfileForBuild(projectRoot string, buildCommands []string) (string, error) {
+func dockerfileForBuild(projectRoot string, buildCommands []string, language string, architecture string, agentName string, triggerName string) (string, error) {
 	dockerfilePath := filepath.Join(projectRoot, "Dockerfile")
+	buildFileSteps, err := loadBuildFileSteps(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	combinedCommands := mergeBuildSteps(buildCommands, buildFileSteps)
+	cmdLine, err := cmdArgsForTarget(agentName, triggerName)
+	if err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(dockerfilePath); err == nil {
 		data, err := os.ReadFile(dockerfilePath)
 		if err != nil {
 			return "", err
 		}
 		content := string(data)
-		commands := formatBuildCommands(buildCommands)
+		commands := formatBuildCommands(combinedCommands)
 		if strings.TrimSpace(commands) == "" {
-			return content, nil
+			return content + "\n\n# Run target\nCMD " + cmdLine + "\n", nil
 		}
-		return content + "\n\n# Build commands from shuttl.json\n" + commands, nil
+		return content + "\n\n# Build commands from shuttl.json\n" + commands + "\n# Run target\nCMD " + cmdLine + "\n", nil
 	}
-	commands := formatBuildCommands(buildCommands)
-	return renderDefaultDockerfile(commands), nil
+	commands := formatBuildCommands(combinedCommands)
+	return renderDefaultDockerfile(commands, language, architecture, cmdLine), nil
 }
 
 func formatBuildCommands(commands []string) string {
@@ -352,24 +360,96 @@ func formatBuildCommands(commands []string) string {
 	return builder.String()
 }
 
-func renderDefaultDockerfile(buildCommands string) string {
-	template := `FROM node:20-slim
+func loadBuildFileSteps(projectRoot string) ([]string, error) {
+	path := filepath.Join(projectRoot, "BUILDFILE")
+	if _, err := os.Stat(path); err != nil {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	var cleaned []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		cleaned = append(cleaned, trimmed)
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+	return cleaned, nil
+}
+
+func mergeBuildSteps(commands []string, buildFileSteps []string) []string {
+	if len(buildFileSteps) == 0 {
+		return commands
+	}
+	merged := make([]string, 0, len(commands)+len(buildFileSteps))
+	merged = append(merged, commands...)
+	merged = append(merged, buildFileSteps...)
+	return merged
+}
+
+func renderDefaultDockerfile(buildCommands string, language string, architecture string, cmdLine string) string {
+	baseImage := baseImageForLanguage(language, architecture)
+	template := `FROM {{BASE_IMAGE}}
 
 WORKDIR /app
 COPY . .
-
-RUN curl -fsSL https://shuttl.io/install.sh | bash
 
 {{BUILD_COMMANDS}}
 
 EXPOSE 8443
 ENTRYPOINT ["shuttl", "serve"]
-CMD ["--port", "8443", "--insecure"]
+CMD {{CMD_ARGS}}
 `
+	template = strings.ReplaceAll(template, "{{BASE_IMAGE}}", baseImage)
+	template = strings.ReplaceAll(template, "{{CMD_ARGS}}", cmdLine)
 	if strings.TrimSpace(buildCommands) == "" {
 		return strings.ReplaceAll(template, "{{BUILD_COMMANDS}}", "")
 	}
 	return strings.ReplaceAll(template, "{{BUILD_COMMANDS}}", strings.TrimRight(buildCommands, "\n"))
+}
+
+func cmdArgsForTarget(agentName, triggerName string) (string, error) {
+	args := []string{
+		"--agent=" + agentName,
+		"--trigger=" + triggerName,
+		"--port",
+		"8443",
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func baseImageForLanguage(language string, architecture string) string {
+	lang := strings.ToLower(strings.TrimSpace(language))
+	arch := strings.ToLower(strings.TrimSpace(architecture))
+	if arch == "" {
+		arch = "amd64"
+	}
+	tag := "latest-" + arch
+	switch lang {
+	case "python":
+		return "shuttl/shuttl-base-python:" + tag
+	case "node", "javascript", "typescript":
+		return "shuttl/shuttl-base-node:" + tag
+	case "java":
+		return "shuttl/shuttl-base-java:" + tag
+	case "c#", "csharp", "dotnet":
+		return "shuttl/shuttl-base-csharp:" + tag
+	case "go", "golang":
+		return "shuttl/shuttl-base-go:" + tag
+	default:
+		return "shuttl/shuttl-base-node:" + tag
+	}
 }
 
 func sanitizeDir(name string) string {

@@ -131,9 +131,10 @@ func isValidLanguage(lang string) bool {
 	return false
 }
 
-func writeShuttlJSON(projectDir, appCommand string) error {
+func writeShuttlJSON(projectDir, appCommand, language string) error {
 	config := map[string]string{
-		"app": appCommand,
+		"app":      appCommand,
+		"language": language,
 	}
 	data, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
@@ -354,7 +355,7 @@ OPENAI_API_KEY=your-api-key-here
 	}
 
 	// Create shuttl.json
-	if err := writeShuttlJSON(projectDir, "npx tsx src/main.ts"); err != nil {
+	if err := writeShuttlJSON(projectDir, "npx tsx src/main.ts", "typescript"); err != nil {
 		return err
 	}
 
@@ -566,7 +567,7 @@ OPENAI_API_KEY=your-api-key-here
 	} else {
 		appCommand = fmt.Sprintf("python -m %s.main", moduleName)
 	}
-	if err := writeShuttlJSON(projectDir, appCommand); err != nil {
+	if err := writeShuttlJSON(projectDir, appCommand, "python"); err != nil {
 		return err
 	}
 
@@ -759,7 +760,7 @@ OPENAI_API_KEY=your-api-key-here
 	}
 
 	// Create shuttl.json
-	if err := writeShuttlJSON(projectDir, fmt.Sprintf("go run .")); err != nil {
+	if err := writeShuttlJSON(projectDir, "go run .", "go"); err != nil {
 		return err
 	}
 
@@ -974,7 +975,7 @@ OPENAI_API_KEY=your-api-key-here
 	}
 
 	// Create shuttl.json
-	if err := writeShuttlJSON(projectDir, "mvn exec:java"); err != nil {
+	if err := writeShuttlJSON(projectDir, "mvn exec:java", "java"); err != nil {
 		return err
 	}
 
@@ -1118,7 +1119,7 @@ OPENAI_API_KEY=your-api-key-here
 	}
 
 	// Create shuttl.json
-	if err := writeShuttlJSON(projectDir, "dotnet run"); err != nil {
+	if err := writeShuttlJSON(projectDir, "dotnet run", "csharp"); err != nil {
 		return err
 	}
 

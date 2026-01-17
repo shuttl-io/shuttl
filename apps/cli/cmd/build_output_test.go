@@ -65,7 +65,7 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 		t.Fatalf("marshal manifest: %v", err)
 	}
 
-	if err := writeBuildOutput(root, manifest, manifestJSON, false); err != nil {
+	if err := writeBuildOutput(root, manifest, manifestJSON, false, "amd64"); err != nil {
 		t.Fatalf("writeBuildOutput: %v", err)
 	}
 
@@ -81,12 +81,15 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 		t.Fatalf("expected ignored.txt to be excluded, got: %v", err)
 	}
 
-	dockerfileBytes, err := os.ReadFile(filepath.Join(destRoot, "DOCKERFILE"))
+	dockerfileBytes, err := os.ReadFile(filepath.Join(destRoot, "Dockerfile"))
 	if err != nil {
 		t.Fatalf("read DOCKERFILE: %v", err)
 	}
 	if !strings.Contains(string(dockerfileBytes), "FROM scratch") {
 		t.Fatalf("expected DOCKERFILE to include base dockerfile content")
+	}
+	if !strings.Contains(string(dockerfileBytes), "--agent=AgentA") || !strings.Contains(string(dockerfileBytes), "--trigger=api") {
+		t.Fatalf("expected DOCKERFILE to include agent/trigger CMD")
 	}
 
 	manifestBytes, err := os.ReadFile(filepath.Join(destRoot, "shuttl-manifest.json"))
@@ -121,8 +124,8 @@ func TestWriteBuildOutputCreatesFilteredManifestsAndTar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read tar: %v", err)
 	}
-	if !entries["main.ts"] || !entries["DOCKERFILE"] || !entries["shuttl-manifest.json"] {
-		t.Fatalf("expected tar entries for main.ts, DOCKERFILE, shuttl-manifest.json, got %+v", entries)
+	if !entries["main.ts"] || !entries["Dockerfile"] || !entries["shuttl-manifest.json"] {
+		t.Fatalf("expected tar entries for main.ts, Dockerfile, shuttl-manifest.json, got %+v", entries)
 	}
 }
 
@@ -141,7 +144,7 @@ func TestWriteBuildOutputNoZipSkipsArchives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	if err := writeBuildOutput(root, manifest, manifestJSON, true); err != nil {
+	if err := writeBuildOutput(root, manifest, manifestJSON, true, "amd64"); err != nil {
 		t.Fatalf("writeBuildOutput: %v", err)
 	}
 	outputRoot := filepath.Join(root, ".shuttl_build")
@@ -166,7 +169,7 @@ func TestWriteBuildOutputDefaultsTriggersWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	if err := writeBuildOutput(root, manifest, manifestJSON, true); err != nil {
+	if err := writeBuildOutput(root, manifest, manifestJSON, true, "amd64"); err != nil {
 		t.Fatalf("writeBuildOutput: %v", err)
 	}
 	destRoot := filepath.Join(root, ".shuttl_build", "AgentA", "api")

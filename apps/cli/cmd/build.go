@@ -51,6 +51,8 @@ func init() {
 	buildCmd.Flags().String("config", "", "Path to shuttl.json (defaults to searching current and parent directories)")
 	buildCmd.Flags().StringP("output", "o", "shuttl-manifest.json", "Output file path for the manifest")
 	buildCmd.Flags().Bool("no-zip", false, "Skip creating tar.gz bundles for .shuttl_build outputs")
+	buildCmd.Flags().Bool("skip-zip", false, "Alias for --no-zip")
+	buildCmd.Flags().String("architecture", "", "Target architecture for generated Dockerfile (default: amd64)")
 	rootCmd.AddCommand(buildCmd)
 }
 
@@ -58,6 +60,11 @@ func runBuild(cmd *cobra.Command, args []string) {
 	configPath, _ := cmd.Flags().GetString("config")
 	outputPath, _ := cmd.Flags().GetString("output")
 	noZip, _ := cmd.Flags().GetBool("no-zip")
+	skipZip, _ := cmd.Flags().GetBool("skip-zip")
+	architecture, _ := cmd.Flags().GetString("architecture")
+	if skipZip {
+		noZip = true
+	}
 
 	var appPath string
 	var cfg *config.Config
@@ -214,7 +221,7 @@ func runBuild(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("✅ Manifest written to: %s\n", absPath)
 
-	if err := writeBuildOutput(configDir, manifest, jsonData, noZip); err != nil {
+	if err := writeBuildOutput(configDir, manifest, jsonData, noZip, architecture); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error writing .shuttl_build output: %v\n", err)
 		os.Exit(1)
 	}
