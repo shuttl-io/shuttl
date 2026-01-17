@@ -13,20 +13,23 @@ const (
 	UserConfigDirName  = "shuttl"
 	UserConfigFileName = "config.jsonc"
 	DefaultAPIURL      = "dashboard.shuttl.io"
+	DefaultBuildURL    = "https://build.shuttl.io"
 )
 
 // UserConfig represents the global user configuration stored in ~/.config/shuttl/config.jsonc
 type UserConfig struct {
-	APIURL             string `json:"api_url"`
-	LastVersionCheck   int64  `json:"last_version_check,omitempty"`
-	LatestVersion      string `json:"latest_version,omitempty"`
-	RevokedVersions    []string `json:"revoked_versions,omitempty"`
+	APIURL           string   `json:"api_url"`
+	BuildURL         string   `json:"build_url"`
+	LastVersionCheck int64    `json:"last_version_check,omitempty"`
+	LatestVersion    string   `json:"latest_version,omitempty"`
+	RevokedVersions  []string `json:"revoked_versions,omitempty"`
 }
 
 // DefaultUserConfig returns a UserConfig with default values
 func DefaultUserConfig() *UserConfig {
 	return &UserConfig{
 		APIURL:          DefaultAPIURL,
+		BuildURL:        DefaultBuildURL,
 		RevokedVersions: []string{},
 	}
 }
@@ -82,6 +85,9 @@ func LoadUserConfig() (*UserConfig, error) {
 	if config.APIURL == "" {
 		config.APIURL = DefaultAPIURL
 	}
+	if config.BuildURL == "" {
+		config.BuildURL = DefaultBuildURL
+	}
 
 	return &config, nil
 }
@@ -104,11 +110,13 @@ func SaveUserConfig(config *UserConfig) error {
   // Shuttl CLI Configuration
   // API URL for the Shuttl dashboard
   "api_url": %q,
+  // Build service URL for Endeavour
+  "build_url": %q,
   "last_version_check": %d,
   "latest_version": %q,
   "revoked_versions": %s
 }
-`, config.APIURL, config.LastVersionCheck, config.LatestVersion, func() string {
+`, config.APIURL, config.BuildURL, config.LastVersionCheck, config.LatestVersion, func() string {
 		if config.RevokedVersions == nil {
 			return "[]"
 		}
@@ -232,4 +240,16 @@ func (c *UserConfig) GetAPIURL() string {
 		return "https://" + apiURL
 	}
 	return apiURL
+}
+
+// GetBuildURL returns the full build URL with https:// prefix when missing
+func (c *UserConfig) GetBuildURL() string {
+	buildURL := c.BuildURL
+	if buildURL == "" {
+		buildURL = DefaultBuildURL
+	}
+	if !strings.HasPrefix(buildURL, "http://") && !strings.HasPrefix(buildURL, "https://") {
+		return "https://" + buildURL
+	}
+	return buildURL
 }
