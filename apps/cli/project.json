@@ -18,6 +18,17 @@
         "build:docker"
       ]
     },
+    "build:base-images": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "./scripts/build_base_images.sh",
+        "cwd": "{projectRoot}"
+      },
+      "dependsOn": [
+        "build:linux-amd64",
+        "build:linux-arm64"
+      ]
+    },
     "build:docker": {
       "executor": "nx:run-commands",
       "options": {

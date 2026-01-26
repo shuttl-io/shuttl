@@ -373,10 +373,13 @@ func runServe(cmd *cobra.Command, args []string) {
 	log.Info("   GET  / - List all endpoints")
 	log.Info("")
 
+	// Wrap mux with request logging
+	loggedHandler := logRequests(mux)
+
 	// Create server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      mux,
+		Handler:      loggedHandler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -418,7 +421,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 		// Configure HTTP/2 server
 		h2s := &http2.Server{}
-		server.Handler = h2c(mux, h2s)
+		server.Handler = h2c(loggedHandler, h2s)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("Server error: %v", err)
@@ -546,6 +549,26 @@ func (ts *triggerServer) createTriggerHandler(endpoint TriggerEndpoint) http.Han
 			ts.handleNonStreamingTrigger(w, ctx, triggerReq)
 		}
 	}
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		duration := time.Since(start)
+		log.Info("%s %s %d %s", r.Method, r.URL.Path, recorder.status, duration)
+	})
 }
 
 // shouldStream checks if the client wants a streaming response

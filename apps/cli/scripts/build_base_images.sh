@@ -7,7 +7,8 @@ TAG="${SHUTTL_BASE_TAG:-latest}"
 PUSH="${SHUTTL_BASE_PUSH:-false}"
 
 LANGUAGES=(python node java csharp go)
-ARCHES=(amd64 arm64)
+ARCHES=(amd64)
+# ARCHES=(amd64 arm64)
 
 for arch in "${ARCHES[@]}"; do
   bin_path="${ROOT_DIR}/dist/shuttl-linux-${arch}"
